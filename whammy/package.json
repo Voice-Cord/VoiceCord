@@ -1,0 +1,16 @@
+{
+  "name": "whammy",
+  "version": "0.0.1",
+  "description": "webm encoder",
+  "main": "whammy.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/antimatter15/whammy.git"
+  },
+  "author": "antimatter15",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/antimatter15/whammy/issues"
+  },
+  "homepage": "https://github.com/antimatter15/whammy"
+}
