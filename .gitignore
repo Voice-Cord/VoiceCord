@@ -93,6 +93,4 @@ baseline.json
 # Husky
 .husky/_
 
-recordings
-frames
 .env

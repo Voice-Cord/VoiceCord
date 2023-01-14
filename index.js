@@ -354,6 +354,7 @@ function getAudioDuration(files) {
 }
 
 function cleanupFiles(files) {
+  fs.unlink(generatedFrameFile, () => {});
   fs.unlink(files.audiofileTemp, () => {});
   fs.unlink(files.videofileTemp, () => {});
   fs.unlink(files.videofileFinal, () => {});
