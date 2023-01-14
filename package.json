@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "preinstall": "npm install canvas && npm install -g node-gyp"
+    "preinstall": "npm install -g node-gyp && npm install canvas"
   },
   "dependencies": {
     "@discordjs/opus": "^0.8.0",
