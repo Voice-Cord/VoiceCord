@@ -2,4 +2,4 @@
 name = "voice-cord"
 version = "0.1.0"
 authors = ["Ibiza <dasgandlaf@gmail.com>"]
-edition = "2023"
+edition = "2021"
