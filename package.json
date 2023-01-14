@@ -7,6 +7,7 @@
     "blob": "^0.1.0",
     "canvas": "^2.11.0",
     "canvas-webp": "^1.0.0",
+    "cargo": "^0.8.0",
     "discord.js": "^14.7.1",
     "dotenv": "^16.0.3",
     "ffmpeg": "^0.0.4",
