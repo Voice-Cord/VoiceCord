@@ -3,7 +3,8 @@ SoundCord is a Discord bot designed to emulate the functionality of WhatsApp voi
 
 
 ## Important
-If you run npm install it will fail.
+1. Contact me for the .env file, which contains the bot token.
+2. If you run npm install it will fail.
 Do the following to make it work for you.
 
 
