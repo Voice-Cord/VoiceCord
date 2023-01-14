@@ -1,4 +1,8 @@
 {
+  "devDependencies": {
+    "@discordjs/opus": "^0.8.0",
+    "canvas": "^2.11.0"
+  },
   "scripts": {
     "preinstall": "npm install -g node-gyp && npm install canvas"
   },
