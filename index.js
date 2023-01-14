@@ -29,13 +29,13 @@ const path = require("path");
 require("canvas-webp");
 require("dotenv/config");
 
-const soundRecorderDisplayName = "Sound Recorder bot";
-const soundRecorderBy = "Recorded on Discord by " + soundRecorderDisplayName;
+const voiceRecorderDisplayName = "Voice Recorder bot";
+const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
-const generatedFrameFile = "frames/soundRecordingFrame.webp";
+const generatedFrameFile = "frames/voiceRecordingFrame.webp";
 
 const excessMessagesByUser = [];
-const soundRecorderVoiceChannel = "Sound-Cord";
+const voiceRecorderVoiceChannel = "Voice-Cord";
 const audioReceiveStreamByUser = {};
 const connectedChannelByChannelId = {};
 
@@ -75,9 +75,9 @@ function tryClearExcessMessages(usernameAndId) {
   }
 }
 
-function findSoundRecorderChannel(guild) {
+function findVoiceRecorderChannel(guild) {
   return guild.channels.cache.find(
-    (channel) => channel.name === soundRecorderVoiceChannel
+    (channel) => channel.name === voiceRecorderVoiceChannel
   );
 }
 
@@ -180,7 +180,7 @@ function generateWebPFromRecording(user, callback) {
   const addBytext = function () {
     ctx.fillStyle = by_col;
     ctx.font = font(by_s);
-    ctx.fillText(soundRecorderBy, by_x, by_y);
+    ctx.fillText(voiceRecorderBy, by_x, by_y);
   };
 
   const add_Avatar_Username_Date_Length_Bytext = function () {
@@ -414,24 +414,24 @@ function abortRecording(files) {
 
 function respondRecordingAttemptWithInviteLink(message, usernameAndId) {
   const respondWithInviteLink = async function respondWithInviteLink(
-    soundRecorderChannel
+    voiceRecorderChannel
   ) {
-    const invite = await soundRecorderChannel.createInvite();
+    const invite = await voiceRecorderChannel.createInvite();
     const link = `https://discord.gg/${invite.code}`;
     message
-      .reply("Join this voice channel to record 🎙️: \n" + link)
+      .reply("Join this voice channel to record your voice 🎙️: \n" + link)
       .then((repliedMessage) => {
         tryClearExcessMessages(usernameAndId);
         markExcessMessage(usernameAndId, repliedMessage);
       });
   };
 
-  const soundRecorderChannel = findSoundRecorderChannel(message.guild);
-  if (soundRecorderChannel) respondWithInviteLink(soundRecorderChannel);
+  const voiceRecorderChannel = findVoiceRecorderChannel(message.guild);
+  if (voiceRecorderChannel) respondWithInviteLink(voiceRecorderChannel);
   else {
     message.guild.channels
       .create({
-        name: soundRecorderVoiceChannel,
+        name: voiceRecorderVoiceChannel,
         type: ChannelType.GuildVoice,
       })
       .then((channel) => respondWithInviteLink(channel));

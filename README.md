@@ -1,5 +1,5 @@
-# SoundCord
-SoundCord is a Discord bot designed to emulate the functionality of WhatsApp voice messages. Using a single command, users are able to record and send voice messages in any channel.
+# VoiceCord
+VoiceCord is a Discord bot designed to emulate the functionality of WhatsApp voice messages. Using a single command, users are able to record and send voice messages in any channel.
 
 
 ## Important
