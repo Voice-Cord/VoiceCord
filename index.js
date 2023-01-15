@@ -88,7 +88,8 @@ function findVoiceRecorderChannel(guild) {
 }
 
 async function createWebPFileFromCanvas(canvas, callback) {
-  sharp(await canvas.encode("png"))
+  // Sharp converts lossless webp format to lossy format
+  sharp(await canvas.encode("webp"))
     .toFormat(sharp.format.webp)
     .webp({ quality: 80, lossless: false })
     .toBuffer((_e, webpBuffer) => {
