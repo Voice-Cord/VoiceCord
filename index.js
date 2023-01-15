@@ -22,11 +22,12 @@ const { OpusEncoder } = opus;
 const fs = require("fs");
 const ffmpeg = createFFmpeg({});
 const Whammy = require("./whammy");
-const Canvas = require("canvas");
+const Canvas = require("@napi-rs/canvas");
 const Image = Canvas.Image;
 const path = require("path");
+const request = require("request").defaults({ encoding: null });
+const sharp = require("sharp");
 
-require("canvas-webp");
 require("dotenv/config");
 
 const voiceRecorderDisplayName = "Voice Recorder bot";
@@ -49,14 +50,19 @@ const client = new Client({
   ],
 });
 
-function fontFile(name) {
-  return (filePath = path.join(__dirname, "/fonts/", name));
+function imageBufferFromUrl(url) {
+  return new Promise((resolve, _reject) => {
+    request.get(url, (_err, _res, body) => {
+      resolve(Buffer.from(body));
+    });
+  });
 }
 
-Canvas.registerFont(fontFile("Comfortaa-SemiBold.ttf"), {
-  family: "Comfortaa",
-  weight: "Demi",
-});
+function fontFile(name) {
+  return (filePath = path.join(__dirname, "..", "fonts", name));
+}
+
+Canvas.GlobalFonts.registerFromPath(fontFile("Comfortaa-SemiBold.ttf"));
 
 function markExcessMessage(usernameAndId, message) {
   const value = excessMessagesByUser[usernameAndId];
@@ -81,25 +87,26 @@ function findVoiceRecorderChannel(guild) {
   );
 }
 
-function writeVoiceRecordingFrameFile(canvas, callback) {
-  const buff = canvas.toBuffer("image/webp", {
-    lossless: false,
-    quality: 0.8,
-  });
-  const buffBase64 = buff.toString("base64");
+async function createWebPFileFromCanvas(canvas, callback) {
+  sharp(await canvas.encode("png"))
+    .toFormat(sharp.format.webp)
+    .webp({ quality: 80, lossless: false })
+    .toBuffer((_e, webpBuffer) => {
+      const webpFrameBase64 = webpBuffer.toString("base64");
 
-  fs.writeFile(generatedFrameFile, buffBase64, "base64", (err) => {
-    const dataUrlContainer = {
-      toDataURL(_imageType, _quality) {
-        return "data:image/webp;base64," + buffBase64;
-      },
-    };
+      fs.writeFile(generatedFrameFile, webpFrameBase64, "base64", () => {
+        const dataUrlContainer = {
+          toDataURL(_imageType, _quality) {
+            return "data:image/webp;base64," + webpFrameBase64;
+          },
+        };
 
-    callback(dataUrlContainer, err);
-  });
+        callback(dataUrlContainer);
+      });
+    });
 }
 
-function generateWebPFromRecording(user, callback) {
+async function generateWebPFromRecording(user, callback) {
   const username = user.displayName;
 
   const cnv_s = { x: 825, y: 280 }; // Canvas size
@@ -189,17 +196,19 @@ function generateWebPFromRecording(user, callback) {
     addDate();
     addBytext();
 
-    writeVoiceRecordingFrameFile(canvas, callback);
+    createWebPFileFromCanvas(canvas, callback);
   };
 
   const avatar = new Image();
   avatar.onload = add_Avatar_Username_Date_Length_Bytext;
   avatar.onerror = (err) => console.log(err);
-  avatar.src = user.displayAvatarURL({
-    format: "jpg",
-    dynamic: true,
-    size: 64,
-  });
+  avatar.src = await imageBufferFromUrl(
+    user.displayAvatarURL({
+      format: "jpg",
+      dynamic: true,
+      size: 64,
+    })
+  );
 }
 
 client.on("ready", async () => {
@@ -383,22 +392,19 @@ function createListeningStream(receiver, userId, message) {
 
       console.log(`✅ Recorded ${files.audiofileTemp}`);
 
-      generateWebPFromRecording(
-        member,
-        async (webpDataUrlContainerObj, _err) => {
-          const audioDuration = await getAudioDuration(files);
-          console.log(`ℹ️ Audio duration: ${audioDuration}`);
+      generateWebPFromRecording(member, async (webpDataUrlContainerObj) => {
+        const audioDuration = await getAudioDuration(files);
+        console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
-          createAndSendVideo(
-            channel,
-            webpDataUrlContainerObj,
-            usernameAndId,
-            audioDuration,
-            files,
-            () => cleanupFiles(files)
-          );
-        }
-      );
+        createAndSendVideo(
+          channel,
+          webpDataUrlContainerObj,
+          usernameAndId,
+          audioDuration,
+          files,
+          () => cleanupFiles(files)
+        );
+      });
     })
     .on("error", () => {
       abortRecording(files);
