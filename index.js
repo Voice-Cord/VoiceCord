@@ -30,7 +30,7 @@ const sharp = require("sharp");
 
 require("dotenv/config");
 
-const voiceRecorderDisplayName = "Voice Recorder bot";
+const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
 const generatedFrameFile = "frames/voiceRecordingFrame.webp";
@@ -280,32 +280,40 @@ async function createAndSendVideo(
   fs.writeFileSync(files.videofileTemp, Buffer.from(webmBlobArray));
   console.log(`✅ Written video ${files.videofileTemp}`);
 
-  ffmpeg.FS("writeFile", "video_t.webm", await fetchFile(files.videofileTemp));
-  ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
-  await ffmpeg.run(
-    "-i",
-    "video_t.webm",
-    "-i",
-    "audio.wav",
-    "-c:v",
-    "copy",
-    "-map",
-    "0:v:0",
-    "-map",
-    "1:a:0",
-    "-c:a",
-    "opus",
-    "-strict",
-    "-2",
-    "-b:a",
-    "16k",
-    "video.webm"
-  );
-  await fs.promises.writeFile(
-    files.videofileFinal,
-    ffmpeg.FS("readFile", "video.webm")
-  );
-  console.log(`✅ Combined video and audio ${files.videofileFinal}`);
+  try {
+    ffmpeg.FS(
+      "writeFile",
+      "video_t.webm",
+      await fetchFile(files.videofileTemp)
+    );
+    ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
+    await ffmpeg.run(
+      "-i",
+      "video_t.webm",
+      "-i",
+      "audio.wav",
+      "-c:v",
+      "copy",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:a",
+      "opus",
+      "-strict",
+      "-2",
+      "-b:a",
+      "16k",
+      "video.webm"
+    );
+    await fs.promises.writeFile(
+      files.videofileFinal,
+      ffmpeg.FS("readFile", "video.webm")
+    );
+    console.log(`✅ Combined video and audio ${files.videofileFinal}`);
+  } catch (e) {
+    console.log(e);
+  }
 
   channel
     .send({
@@ -382,37 +390,45 @@ function createListeningStream(receiver, userId, message) {
   const member = message.member;
   const channel = message.channel;
 
-  const audioReceiveStream = receiver
-    .subscribe(userId, stopRecordingManually)
-    .pipe(decodingStream, stopRecordingManually)
-    .pipe(fileWriter, stopRecordingManually)
-    .on("finish", () => {
-      tryClearExcessMessages(usernameAndId);
+  try {
+    const audioReceiveStream = receiver
+      .subscribe(userId, stopRecordingManually)
+      .pipe(decodingStream, stopRecordingManually)
+      .pipe(fileWriter, stopRecordingManually)
+      .on("finish", () => {
+        tryClearExcessMessages(usernameAndId);
 
-      if (!shouldPostRecording) return;
+        if (!shouldPostRecording) return;
 
-      console.log(`✅ Recorded ${files.audiofileTemp}`);
+        console.log(`✅ Recorded ${files.audiofileTemp}`);
 
-      generateWebPFromRecording(member, async (webpDataUrlContainerObj) => {
-        const audioDuration = await getAudioDuration(files);
-        console.log(`ℹ️ Audio duration: ${audioDuration}`);
+        generateWebPFromRecording(member, async (webpDataUrlContainerObj) => {
+          const audioDuration = await getAudioDuration(files);
+          console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
-        createAndSendVideo(
-          channel,
-          webpDataUrlContainerObj,
-          usernameAndId,
-          audioDuration,
-          files,
-          () => cleanupFiles(files)
-        );
+          createAndSendVideo(
+            channel,
+            webpDataUrlContainerObj,
+            usernameAndId,
+            audioDuration,
+            files,
+            () => cleanupFiles(files)
+          );
+
+          delete audioReceiveStream[usernameAndId];
+        });
+      })
+      .on("error", () => {
+        abortRecording(files);
+        shouldPostRecording = false;
+
+        delete audioReceiveStream[usernameAndId];
       });
-    })
-    .on("error", () => {
-      abortRecording(files);
-      shouldPostRecording = false;
-    });
 
-  audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
+    audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function abortRecording(files) {
