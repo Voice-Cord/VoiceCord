@@ -5,12 +5,4 @@ VoiceCord is a Discord bot designed to emulate the functionality of WhatsApp voi
 ## Important
 
 1. Contact me for the .env file, which contains the bot token.
-2. If you run npm install it will fail.
-   Do the following to make it work for you.
-
-### Settings up npm packages
-
-1. Run npm install
-2. IF IT DOESNT WORK: Follow these instructions: https://github.com/Automattic/node-canvas/wiki/#install-manually
-   (For me, I only needed to download GTK2 and put the contents in: "C:\GTK")
-3. Run npm install
+2. If npm install doesnt work, contact me

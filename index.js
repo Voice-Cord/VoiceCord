@@ -384,8 +384,8 @@ function createListeningStream(receiver, userId, message) {
 
   const audioReceiveStream = receiver
     .subscribe(userId, stopRecordingManually)
-    .pipe(decodingStream)
-    .pipe(fileWriter)
+    .pipe(decodingStream, stopRecordingManually)
+    .pipe(fileWriter, stopRecordingManually)
     .on("finish", () => {
       tryClearExcessMessages(usernameAndId);
 
