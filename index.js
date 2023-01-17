@@ -33,8 +33,6 @@ require("dotenv/config");
 const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
-const generatedFrameFile = "frames/voiceRecordingFrame.webp";
-
 const excessMessagesByUser = [];
 const voiceRecorderVoiceChannel = "Voice-Cord";
 const audioReceiveStreamByUser = {};
@@ -87,7 +85,7 @@ function findVoiceRecorderChannel(guild) {
   );
 }
 
-async function createWebPFileFromCanvas(canvas, callback) {
+async function createWebPFileFromCanvas(canvas, files, callback) {
   // Sharp converts lossless webp format to lossy format
   sharp(await canvas.encode("webp"))
     .toFormat(sharp.format.webp)
@@ -95,7 +93,7 @@ async function createWebPFileFromCanvas(canvas, callback) {
     .toBuffer((_e, webpBuffer) => {
       const webpFrameBase64 = webpBuffer.toString("base64");
 
-      fs.writeFile(generatedFrameFile, webpFrameBase64, "base64", () => {
+      fs.writeFile(files.webpfileTemp, webpFrameBase64, "base64", () => {
         const dataUrlContainer = {
           toDataURL(_imageType, _quality) {
             return "data:image/webp;base64," + webpFrameBase64;
@@ -107,7 +105,7 @@ async function createWebPFileFromCanvas(canvas, callback) {
     });
 }
 
-async function generateWebPFromRecording(user, callback) {
+async function generateWebPFromRecording(user, files, callback) {
   const username = user.displayName;
 
   const cnv_s = { x: 825, y: 280 }; // Canvas size
@@ -197,7 +195,7 @@ async function generateWebPFromRecording(user, callback) {
     addDate();
     addBytext();
 
-    createWebPFileFromCanvas(canvas, callback);
+    createWebPFileFromCanvas(canvas, files, callback);
   };
 
   const avatar = new Image();
@@ -243,7 +241,7 @@ function endVoiceStream(audioReceiveStream, usernameAndId, guildId) {
   delete audioReceiveStreamByUser[usernameAndId];
 }
 
-function tryEndVoiceStreamOrError(message) {
+function trySendVoiceStreamOrError(message) {
   const userId = message.author.id;
   const usernameAndId = findUsernameAndId(userId);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
@@ -280,40 +278,32 @@ async function createAndSendVideo(
   fs.writeFileSync(files.videofileTemp, Buffer.from(webmBlobArray));
   console.log(`✅ Written video ${files.videofileTemp}`);
 
-  try {
-    ffmpeg.FS(
-      "writeFile",
-      "video_t.webm",
-      await fetchFile(files.videofileTemp)
-    );
-    ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
-    await ffmpeg.run(
-      "-i",
-      "video_t.webm",
-      "-i",
-      "audio.wav",
-      "-c:v",
-      "copy",
-      "-map",
-      "0:v:0",
-      "-map",
-      "1:a:0",
-      "-c:a",
-      "opus",
-      "-strict",
-      "-2",
-      "-b:a",
-      "16k",
-      "video.webm"
-    );
-    await fs.promises.writeFile(
-      files.videofileFinal,
-      ffmpeg.FS("readFile", "video.webm")
-    );
-    console.log(`✅ Combined video and audio ${files.videofileFinal}`);
-  } catch (e) {
-    console.log(e);
-  }
+  ffmpeg.FS("writeFile", "video_t.webm", await fetchFile(files.videofileTemp));
+  ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
+  await ffmpeg.run(
+    "-i",
+    "video_t.webm",
+    "-i",
+    "audio.wav",
+    "-c:v",
+    "copy",
+    "-map",
+    "0:v:0",
+    "-map",
+    "1:a:0",
+    "-c:a",
+    "opus",
+    "-strict",
+    "-2",
+    "-b:a",
+    "16k",
+    "video.webm"
+  );
+  await fs.promises.writeFile(
+    files.videofileFinal,
+    ffmpeg.FS("readFile", "video.webm")
+  );
+  console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
   channel
     .send({
@@ -329,11 +319,12 @@ async function createAndSendVideo(
 
 function generateFileNames(username) {
   const filename = `recordings/${username}`;
+  const webpfileTemp = `frames/${username}`;
   const audiofileTemp = filename + `.wav`;
   const videofileTemp = filename + `_t.webm`;
   const videofileFinal = filename + `.webm`;
 
-  return { audiofileTemp, videofileTemp, videofileFinal };
+  return { audiofileTemp, videofileTemp, videofileFinal, webpfileTemp };
 }
 
 function prepareRecording(audiofileTemp) {
@@ -372,7 +363,7 @@ function getAudioDuration(files) {
 }
 
 function cleanupFiles(files) {
-  fs.unlink(generatedFrameFile, () => {});
+  fs.unlink(files.webpfileTemp, () => {});
   fs.unlink(files.audiofileTemp, () => {});
   fs.unlink(files.videofileTemp, () => {});
   fs.unlink(files.videofileFinal, () => {});
@@ -390,19 +381,21 @@ function createListeningStream(receiver, userId, message) {
   const member = message.member;
   const channel = message.channel;
 
-  try {
-    const audioReceiveStream = receiver
-      .subscribe(userId, stopRecordingManually)
-      .pipe(decodingStream, stopRecordingManually)
-      .pipe(fileWriter, stopRecordingManually)
-      .on("finish", () => {
-        tryClearExcessMessages(usernameAndId);
+  const audioReceiveStream = receiver
+    .subscribe(userId, stopRecordingManually)
+    .pipe(decodingStream)
+    .pipe(fileWriter)
+    .on("finish", () => {
+      tryClearExcessMessages(usernameAndId);
 
-        if (!shouldPostRecording) return;
+      if (!shouldPostRecording) return;
 
-        console.log(`✅ Recorded ${files.audiofileTemp}`);
+      console.log(`✅ Recorded ${files.audiofileTemp}`);
 
-        generateWebPFromRecording(member, async (webpDataUrlContainerObj) => {
+      generateWebPFromRecording(
+        member,
+        files,
+        async (webpDataUrlContainerObj) => {
           const audioDuration = await getAudioDuration(files);
           console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
@@ -415,20 +408,18 @@ function createListeningStream(receiver, userId, message) {
             () => cleanupFiles(files)
           );
 
-          delete audioReceiveStream[usernameAndId];
-        });
-      })
-      .on("error", () => {
-        abortRecording(files);
-        shouldPostRecording = false;
+          delete audioReceiveStreamByUser[usernameAndId];
+        }
+      );
+    })
+    .on("error", () => {
+      abortRecording(files);
+      shouldPostRecording = false;
 
-        delete audioReceiveStream[usernameAndId];
-      });
+      delete audioReceiveStreamByUser[usernameAndId];
+    });
 
-    audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
-  } catch (e) {
-    console.error(e);
-  }
+  audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
 
 function abortRecording(files) {
@@ -499,7 +490,7 @@ client.on("messageCreate", (message) => {
     } else startRecordingUser(message, usernameAndId);
   }
   if (message.content === "a") {
-    tryEndVoiceStreamOrError(message);
+    trySendVoiceStreamOrError(message);
   }
 });
 
@@ -515,27 +506,28 @@ function abortRecordingAndLeaveVoiceChannel(
 
   if (audioReceiveStream) {
     audioReceiveStream.emit("error");
-    endVoiceStream(
-      audioReceiveStream,
-      usernameAndId,
-      userOldVoiceState.guild.id
-    );
+    getVoiceConnection(guildId).disconnect();
+    delete audioReceiveStreamByUser[usernameAndId];
   }
 }
 
 function didRecordingUserLeaveChannel(oldState, newState) {
-  const botConnectedChannel = connectedChannelByChannelId[oldState.channelId];
-  const hasRecordingUserLeftChannelWithBot =
-    oldState.channelId !== newState.channelId && botConnectedChannel;
+  const channelTheBotIsIn = connectedChannelByChannelId[oldState.channelId];
 
-  return { hasRecordingUserLeftChannelWithBot, botConnectedChannel };
+  const hasElseThanBotChangedVoiceState = oldState.id !== client.user.id;
+  const hasChangedChannel = oldState.channelId !== newState.channelId;
+  const hasRecordingUserLeftChannelWithBot =
+    hasChangedChannel && channelTheBotIsIn && hasElseThanBotChangedVoiceState;
+
+  return { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn };
 }
 
 client.on("voiceStateUpdate", (oldState, newState) => {
-  const { hasRecordingUserLeftChannelWithBot, botConnectedChannel } =
+  const { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn } =
     didRecordingUserLeaveChannel(oldState, newState);
+
   if (hasRecordingUserLeftChannelWithBot) {
-    abortRecordingAndLeaveVoiceChannel(oldState, botConnectedChannel);
+    abortRecordingAndLeaveVoiceChannel(oldState, channelTheBotIsIn);
   }
 });
 
