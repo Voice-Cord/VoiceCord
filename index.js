@@ -48,6 +48,14 @@ const client = new Client({
   ],
 });
 
+function currentTimeFormatted() {
+  const time = new Date().toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return time;
+}
+
 function imageBufferFromUrl(url) {
   return new Promise((resolve, _reject) => {
     request.get(url, (_err, _res, body) => {
@@ -173,10 +181,7 @@ async function generateWebPFromRecording(user, files, callback) {
   };
 
   const addDate = function () {
-    const time = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const time = currentTimeFormatted();
     ctx.fillStyle = dte_col;
     ctx.font = font(dte_s);
     ctx.fillText(time, dte_x, dte_y);
@@ -235,13 +240,13 @@ function findUsernameAndId(userId) {
   else console.log(`User: "${user}" not found.`);
 }
 
-function endVoiceStream(audioReceiveStream, usernameAndId, guildId) {
+function finishVoiceNote(audioReceiveStream, usernameAndId, guildId) {
   getVoiceConnection(guildId).disconnect();
-  audioReceiveStream.end();
+  audioReceiveStream.emit("finish");
   delete audioReceiveStreamByUser[usernameAndId];
 }
 
-function trySendVoiceStreamOrError(message) {
+function tryFinishVoiceNoteOrReplyError(message) {
   const userId = message.author.id;
   const usernameAndId = findUsernameAndId(userId);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
@@ -256,7 +261,7 @@ function trySendVoiceStreamOrError(message) {
     return;
   }
 
-  endVoiceStream(audioReceiveStream, usernameAndId, message.guildId);
+  finishVoiceNote(audioReceiveStream, usernameAndId, message.guildId);
 }
 
 async function createAndSendVideo(
@@ -318,7 +323,8 @@ async function createAndSendVideo(
 }
 
 function generateFileNames(username) {
-  const filename = `recordings/${username}`;
+  const date = currentTimeFormatted().replace(":", "_");
+  const filename = `recordings/${date}-${username}`;
   const webpfileTemp = `frames/${username}`;
   const audiofileTemp = filename + `.wav`;
   const videofileTemp = filename + `_t.webm`;
@@ -376,48 +382,53 @@ function createListeningStream(receiver, userId, message) {
   const { fileWriter, stopRecordingManually, decodingStream } =
     prepareRecording(files.audiofileTemp);
 
-  let shouldPostRecording = true;
-
   const member = message.member;
   const channel = message.channel;
 
-  const audioReceiveStream = receiver
-    .subscribe(userId, stopRecordingManually)
-    .pipe(decodingStream)
-    .pipe(fileWriter)
-    .on("finish", () => {
-      tryClearExcessMessages(usernameAndId);
+  const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
 
-      if (!shouldPostRecording) return;
+  const clearAudioReceiveStream = () => {
+    audioReceiveStream.destroy();
+    delete audioReceiveStreamByUser[usernameAndId];
+  };
 
-      console.log(`✅ Recorded ${files.audiofileTemp}`);
+  audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
-      generateWebPFromRecording(
-        member,
-        files,
-        async (webpDataUrlContainerObj) => {
-          const audioDuration = await getAudioDuration(files);
-          console.log(`ℹ️ Audio duration: ${audioDuration}`);
+  //Finish is invoked by our code when voice note is supposed to be sent
+  audioReceiveStream.on("finish", () => {
+    fileWriter.end();
+    tryClearExcessMessages(usernameAndId);
 
-          createAndSendVideo(
-            channel,
-            webpDataUrlContainerObj,
-            usernameAndId,
-            audioDuration,
-            files,
-            () => cleanupFiles(files)
-          );
+    console.log(`✅ Recorded ${files.audiofileTemp}`);
 
-          delete audioReceiveStreamByUser[usernameAndId];
-        }
-      );
-    })
-    .on("error", () => {
-      abortRecording(files);
-      shouldPostRecording = false;
+    generateWebPFromRecording(
+      member,
+      files,
+      async (webpDataUrlContainerObj) => {
+        const audioDuration = await getAudioDuration(files);
+        console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
-      delete audioReceiveStreamByUser[usernameAndId];
-    });
+        createAndSendVideo(
+          channel,
+          webpDataUrlContainerObj,
+          usernameAndId,
+          audioDuration,
+          files,
+          () => cleanupFiles(files)
+        );
+
+        clearAudioReceiveStream();
+        audioReceiveStream.destroy();
+      }
+    );
+  });
+
+  audioReceiveStream.on("error", () => {
+    abortRecording(files);
+
+    audioReceiveStream.destroy();
+    clearAudioReceiveStream();
+  });
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
@@ -490,7 +501,7 @@ client.on("messageCreate", (message) => {
     } else startRecordingUser(message, usernameAndId);
   }
   if (message.content === "a") {
-    trySendVoiceStreamOrError(message);
+    tryFinishVoiceNoteOrReplyError(message);
   }
 });
 
@@ -532,3 +543,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 });
 
 client.login(process.env.TOKEN);
+finishVoiceNote;
+finishVoiceNote;
+tryFinishVoiceNoteOrReplyError;
+tryFinishVoiceNoteOrReplyError;
