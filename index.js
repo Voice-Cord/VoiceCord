@@ -10,7 +10,15 @@ const {
   getVoiceConnection,
   joinVoiceChannel,
 } = require("@discordjs/voice");
-const { ChannelType, Client, GatewayIntentBits } = require("discord.js");
+const {
+  ChannelType,
+  Client,
+  GatewayIntentBits,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  Events,
+} = require("discord.js");
 const { Transform } = require("stream");
 const { FileWriter } = require("wav");
 const { createFFmpeg, fetchFile } = require("@ffmpeg/ffmpeg");
@@ -30,17 +38,42 @@ const sharp = require("sharp");
 
 require("dotenv/config");
 
+class OpusDecodingStream extends Transform {
+  encoder;
+
+  constructor(options, encoder) {
+    super(options);
+    this.encoder = encoder;
+  }
+
+  _transform(data, _encoding, callback) {
+    this.push(this.encoder.decode(data));
+    callback();
+  }
+}
+
 const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
+const recordButtonId = "record";
+const sendButtonId = "send";
+
 const voiceRecorderVoiceChannel = "Voice-Cord";
 const excessMessagesByUser = [];
+
+// The values are: "usernameAndId + <buttonId>"
+let usersRequestedButtons = [];
 
 const audioReceiveStreamByUser = {};
 const connectedChannelByChannelId = {};
 
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel = {};
+
+const buttonIdsToFunctions = {
+  [recordButtonId]: handleUserRecordingAttempt,
+  [sendButtonId]: tryFinishVoiceNoteOrReplyError,
+};
 
 const client = new Client({
   intents: [
@@ -50,6 +83,11 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
   ],
+});
+
+client.on("ready", async () => {
+  console.log("Bot is ready!");
+  await ffmpeg.load();
 });
 
 function currentTimeFormatted() {
@@ -86,8 +124,21 @@ function markExcessMessage(usernameAndId, message) {
 function tryClearExcessMessages(usernameAndId) {
   const messages = excessMessagesByUser[usernameAndId];
   if (messages) {
-    messages.forEach((message) => message.delete());
-    excessMessagesByUser[usernameAndId] = [];
+    messages.forEach((message) => {
+      message.components?.forEach((actionRow) => {
+        actionRow.components?.forEach((button) => {
+          if (
+            button.custom_id !== undefined &&
+            button.style !== ButtonStyle.Link
+          )
+            usersRequestedButtons.pop(usernameAndId + button.custom_id);
+        });
+      });
+
+      message.delete();
+    });
+
+    delete excessMessagesByUser[usernameAndId];
   }
 }
 
@@ -95,6 +146,35 @@ function findVoiceRecorderChannel(guild) {
   return guild.channels.cache.find(
     (channel) => channel.name === voiceRecorderVoiceChannel
   );
+}
+
+function row(...components) {
+  return new ActionRowBuilder().addComponents(...components);
+}
+
+async function createJoinVcButton(guild) {
+  return new ButtonBuilder()
+    .setLabel("🎙️ Join VC to record")
+    .setStyle(ButtonStyle.Link)
+    .setURL(await generateInviteLinkToVoiceCordChannel(guild));
+}
+
+function registerSendButton(usernameAndId) {
+  usersRequestedButtons.push(usernameAndId + sendButtonId);
+
+  return new ButtonBuilder()
+    .setCustomId(sendButtonId)
+    .setLabel("📨 Send")
+    .setStyle(ButtonStyle.Success);
+}
+
+function registerRecordButton(usernameAndId) {
+  usersRequestedButtons.push(usernameAndId + recordButtonId);
+
+  return new ButtonBuilder()
+    .setCustomId(recordButtonId)
+    .setLabel("🔴 Record")
+    .setStyle(ButtonStyle.Danger);
 }
 
 async function createWebPFileFromCanvas(canvas, files, callback) {
@@ -219,59 +299,38 @@ async function generateWebPFromRecording(user, files, callback) {
   );
 }
 
-client.on("ready", async () => {
-  console.log("Bot is ready!");
-  await ffmpeg.load();
-});
-
-class OpusDecodingStream extends Transform {
-  encoder;
-
-  constructor(options, encoder) {
-    super(options);
-    this.encoder = encoder;
-  }
-
-  _transform(data, _encoding, callback) {
-    this.push(this.encoder.decode(data));
-    callback();
-  }
-}
-
 function findUsernameAndId(userId) {
   const user = client.users.cache.get(userId);
   if (user) return user.tag;
   else console.log(`User: "${user}" not found.`);
 }
 
-function finishVoiceNote(audioReceiveStream, usernameAndId, message) {
-  message.member.voice.setChannel(recordingUsersInitialChannel[usernameAndId]);
-  getVoiceConnection(message.guildId).disconnect();
-  audioReceiveStream.emit("finish");
+function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
+  interaction.member.voice.setChannel(
+    recordingUsersInitialChannel[usernameAndId]
+  );
+  getVoiceConnection(interaction.guildId).disconnect();
+  audioReceiveStream.emit("finish", interaction);
+
   delete audioReceiveStreamByUser[usernameAndId];
   delete recordingUsersInitialChannel[usernameAndId];
 }
 
-function tryFinishVoiceNoteOrReplyError(message) {
-  const userId = message.author.id;
-  const usernameAndId = findUsernameAndId(userId);
+function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
-  markExcessMessage(usernameAndId, message);
-
   if (!audioReceiveStream) {
-    message.reply("You aren't recording though 🤔").then((repliedMessage) => {
-      tryClearExcessMessages(usernameAndId);
-      markExcessMessage(usernameAndId, repliedMessage);
-    });
-    return;
-  }
-
-  finishVoiceNote(audioReceiveStream, usernameAndId, message);
+    interaction
+      .reply({
+        content: "You aren't recording though 🤔",
+        ephemeral: true,
+      })
+      .then(() => tryClearExcessMessages(usernameAndId));
+  } else finishVoiceNote(audioReceiveStream, usernameAndId, interaction);
 }
 
 async function createAndSendVideo(
-  channel,
+  interaction,
   webpDataUrlContainerObj,
   usernameAndId,
   audioDuration,
@@ -316,7 +375,8 @@ async function createAndSendVideo(
   );
   console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-  channel
+  interaction.deferUpdate();
+  interaction.channel
     .send({
       files: [files.videofileFinal],
     })
@@ -386,22 +446,18 @@ function stopRecording(audioReceiveStream, usernameAndId) {
   delete audioReceiveStreamByUser[usernameAndId];
 }
 
-function createVoiceNote(receiver, userId, message) {
+function startVoiceNoteRecording(receiver, userId, interaction) {
   const usernameAndId = findUsernameAndId(userId);
   const files = generateFileNames(usernameAndId);
-
+  const member = interaction.member;
   const { fileWriter, stopRecordingManually, decodingStream } =
     prepareRecording(files.audiofileTemp);
-
-  const member = message.member;
-  const channel = message.channel;
-
   const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
 
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
   //Finish is invoked by our code when voice note send action is made by user
-  audioReceiveStream.on("finish", () => {
+  audioReceiveStream.on("finish", (interaction) => {
     fileWriter.end();
     tryClearExcessMessages(usernameAndId);
 
@@ -415,7 +471,7 @@ function createVoiceNote(receiver, userId, message) {
         console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
         createAndSendVideo(
-          channel,
+          interaction,
           webpDataUrlContainerObj,
           usernameAndId,
           audioDuration,
@@ -441,37 +497,27 @@ function abortRecording(files, audioReceiveStream, usernameAndId) {
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
 
-function respondRecordingAttemptWithInviteLink(message, usernameAndId) {
-  const respondWithInviteLink = async function respondWithInviteLink(
-    voiceRecorderChannel
-  ) {
-    const invite = await voiceRecorderChannel.createInvite();
+async function generateInviteLinkToVoiceCordChannel(guild) {
+  const getInviteLink = async (voiceCordChannel) => {
+    const invite = await voiceCordChannel.createInvite();
     const link = `https://discord.gg/${invite.code}`;
-    message
-      .reply("Join this voice channel to record your voice 🎙️: \n" + link)
-      .then((repliedMessage) => {
-        tryClearExcessMessages(usernameAndId);
-        markExcessMessage(usernameAndId, repliedMessage);
-      });
+    return link;
   };
 
-  const voiceRecorderChannel = findVoiceRecorderChannel(message.guild);
-  if (voiceRecorderChannel) respondWithInviteLink(voiceRecorderChannel);
+  const voiceRecorderChannel = findVoiceRecorderChannel(guild);
+  if (voiceRecorderChannel) return getInviteLink(voiceRecorderChannel);
   else {
-    message.guild.channels
-      .create({
-        name: voiceRecorderVoiceChannel,
-        type: ChannelType.GuildVoice,
-      })
-      .then((channel) => respondWithInviteLink(channel));
+    const channel = await message.guild.channels.create({
+      name: voiceRecorderVoiceChannel,
+      type: ChannelType.GuildVoice,
+    });
+    return getInviteLink(channel);
   }
-
-  return;
 }
 
-function startRecordingUser(message, usernameAndId) {
-  const channel = message.member.voice.channel;
-  const userId = message.author.id;
+function startRecordingUser(interaction, usernameAndId) {
+  const channel = interaction.member.voice.channel;
+  const userId = interaction.user.id;
 
   const connectionChannel = joinVoiceChannel({
     channelId: channel.id,
@@ -484,14 +530,14 @@ function startRecordingUser(message, usernameAndId) {
   connectedChannelByChannelId[channel.id] = connectionChannel;
 
   const receiver = connectionChannel.receiver;
-  createVoiceNote(receiver, userId, message);
+  startVoiceNoteRecording(receiver, userId, interaction);
 
-  message
-    .reply(message.member.displayName + " is Recording!")
-    .then((newMessage) => {
-      tryClearExcessMessages(usernameAndId);
-      markExcessMessage(usernameAndId, newMessage);
-    });
+  usersRequestedButtons = [];
+  interaction.message.edit({
+    content: interaction.member.displayName + " is recording!",
+    components: [row(registerSendButton(usernameAndId))],
+  });
+  interaction.deferUpdate();
 }
 
 function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
@@ -502,21 +548,60 @@ function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
   else return voice.setChannel(recorderChannel);
 }
 
-client.on("messageCreate", (message) => {
-  if (message.content === "r") {
-    const usernameAndId = findUsernameAndId(message.author.id);
-    markExcessMessage(usernameAndId, message);
+function handleUserRecordingAttempt(interaction, usernameAndId) {
+  moveUserToVoiceCordVCIfNeeded(interaction, usernameAndId).then(() => {
+    startRecordingUser(interaction, usernameAndId);
+  });
+}
 
-    moveUserToVoiceCordVCIfNeeded(message, usernameAndId).then(() => {
-      if (!message.member.voice.channel) {
-        respondRecordingAttemptWithInviteLink(message, usernameAndId);
-      } else {
-        startRecordingUser(message, usernameAndId);
-      }
-    });
+async function respondRecordCommandWithButtons(message) {
+  const usernameAndId = findUsernameAndId(message.author.id);
+  const channel = message.channel;
+
+  let components;
+  if (message.member.voice.channel) {
+    components = row(
+      registerRecordButton(usernameAndId),
+      registerSendButton(usernameAndId)
+    );
+  } else {
+    components = row(
+      registerRecordButton(usernameAndId),
+      registerSendButton(usernameAndId),
+      await createJoinVcButton(message.guild)
+    );
   }
-  if (message.content === "a") {
-    tryFinishVoiceNoteOrReplyError(message);
+
+  message.delete();
+
+  channel
+    .send({
+      content: message.member.displayName + " wants to record!",
+      components: [components],
+    })
+    .then((newMessage) => {
+      markExcessMessage(usernameAndId, newMessage);
+    });
+}
+
+client.on("messageCreate", (message) => {
+  const contentLowerCase = message.content.toLowerCase();
+  if (contentLowerCase == ".record" || contentLowerCase == ". record") {
+    respondRecordCommandWithButtons(message);
+  }
+});
+
+client.on("interactionCreate", (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const usernameAndId = findUsernameAndId(interaction.user.id);
+  if (usersRequestedButtons.includes(usernameAndId + interaction.customId)) {
+    buttonIdsToFunctions[interaction.customId](interaction, usernameAndId);
+
+    const indexToRemove = usersRequestedButtons.indexOf(
+      usernameAndId + interaction.customId
+    );
+    usersRequestedButtons.splice(indexToRemove, 1);
   }
 });
 
@@ -540,6 +625,7 @@ function abortRecordingAndLeaveVoiceChannel(
 function didRecordingUserLeaveChannel(oldState, newState) {
   const channelTheBotIsIn = connectedChannelByChannelId[oldState.channelId];
 
+  //TODO: Also if check if user exists in recording users dictinoary
   const hasElseThanBotChangedVoiceState = oldState.id !== client.user.id;
   const hasChangedChannel = oldState.channelId !== newState.channelId;
   const hasRecordingUserLeftChannelWithBot =
