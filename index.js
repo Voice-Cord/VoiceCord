@@ -69,6 +69,7 @@ const connectedChannelByChannelId = {};
 
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel = {};
+const usersToRecordWhenJoinVC = {};
 
 const buttonIdsToFunctions = {
   [recordButtonId]: handleUserRecordingAttempt,
@@ -613,6 +614,11 @@ client.on("interactionCreate", (interaction) => {
       usernameAndId + interaction.customId
     );
     usersRequestedButtons.splice(indexToRemove, 1);
+  } else {
+    interaction.reply({
+      content: 'Type ".record" into chat, and try that again!',
+      ephemeral: true,
+    });
   }
 });
 
