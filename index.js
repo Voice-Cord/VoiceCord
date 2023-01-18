@@ -55,6 +55,8 @@ class OpusDecodingStream extends Transform {
 const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
+const joinVCButtonLabel = "🔊 Join VC to record";
+
 const recordButtonId = "record";
 const sendButtonId = "send";
 
@@ -69,10 +71,9 @@ const connectedChannelByChannelId = {};
 
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel = {};
-const usersToRecordWhenJoinVC = {};
 
 const buttonIdsToFunctions = {
-  [recordButtonId]: handleUserRecordingAttempt,
+  [recordButtonId]: handleUserRecordStartAction,
   [sendButtonId]: tryFinishVoiceNoteOrReplyError,
 };
 
@@ -155,7 +156,7 @@ function row(...components) {
 
 async function createJoinVcButton(guild) {
   return new ButtonBuilder()
-    .setLabel("🎙️ Join VC to record")
+    .setLabel(joinVCButtonLabel)
     .setStyle(ButtonStyle.Link)
     .setURL(await generateInviteLinkToVoiceCordChannel(guild));
 }
@@ -178,7 +179,7 @@ function registerRecordButton(usernameAndId) {
 
   return new ButtonBuilder()
     .setCustomId(recordButtonId)
-    .setLabel("🔴 Record")
+    .setLabel("🎙️ Record")
     .setStyle(ButtonStyle.Danger);
 }
 
@@ -325,13 +326,15 @@ function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
   if (!audioReceiveStream) {
-    interaction
-      .reply({
-        content: "You aren't recording though 🤔",
-        ephemeral: true,
-      })
-      .then(() => tryClearExcessMessages(usernameAndId));
-  } else finishVoiceNote(audioReceiveStream, usernameAndId, interaction);
+    interaction.reply({
+      content: "❌ You have to record first! 🎙️",
+      ephemeral: true,
+    });
+    return false;
+  } else {
+    finishVoiceNote(audioReceiveStream, usernameAndId, interaction);
+    return true;
+  }
 }
 
 async function createAndSendVideo(
@@ -538,11 +541,14 @@ function startRecordingUser(interaction, usernameAndId) {
   startVoiceNoteRecording(receiver, userId, interaction);
 
   usersRequestedButtons = [];
+  tryClearExcessMessages(usernameAndId);
+  interaction.deferReply();
+  interaction.deleteReply();
+
   interaction.message.edit({
     content: interaction.member.displayName + " is recording!",
     components: [row(registerSendButton(usernameAndId))],
   });
-  interaction.deferUpdate();
 }
 
 function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
@@ -553,10 +559,24 @@ function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
   else return voice.setChannel(recorderChannel);
 }
 
-function handleUserRecordingAttempt(interaction, usernameAndId) {
-  moveUserToVoiceCordVCIfNeeded(interaction, usernameAndId).then(() => {
-    startRecordingUser(interaction, usernameAndId);
-  });
+function handleUserRecordStartAction(interaction, usernameAndId) {
+  if (
+    interaction.member.voice.channel !==
+    findVoiceRecorderChannel(interaction.guild)
+  ) {
+    interaction.reply({
+      content: `❌\nYou first have to join the \`${voiceRecorderVoiceChannel}\` VC!\nPro Tip: Use the button that says \`${joinVCButtonLabel}\``,
+      ephemeral: true,
+    });
+
+    return false;
+  } else {
+    moveUserToVoiceCordVCIfNeeded(interaction, usernameAndId).then(() => {
+      startRecordingUser(interaction, usernameAndId);
+    });
+
+    return true;
+  }
 }
 
 async function respondRecordCommandWithButtons(message, usernameAndId) {
@@ -608,15 +628,17 @@ client.on("interactionCreate", (interaction) => {
 
   const usernameAndId = findUsernameAndId(interaction.user.id);
   if (usersRequestedButtons.includes(usernameAndId + interaction.customId)) {
-    buttonIdsToFunctions[interaction.customId](interaction, usernameAndId);
-
-    const indexToRemove = usersRequestedButtons.indexOf(
-      usernameAndId + interaction.customId
-    );
-    usersRequestedButtons.splice(indexToRemove, 1);
+    if (
+      buttonIdsToFunctions[interaction.customId](interaction, usernameAndId)
+    ) {
+      const indexToRemove = usersRequestedButtons.indexOf(
+        usernameAndId + interaction.customId
+      );
+      usersRequestedButtons.splice(indexToRemove, 1);
+    }
   } else {
     interaction.reply({
-      content: 'Type ".record" into chat, and try that again!',
+      content: "Type `.record` into chat, and try that again!",
       ephemeral: true,
     });
   }
