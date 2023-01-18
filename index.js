@@ -160,7 +160,9 @@ async function createJoinVcButton(guild) {
 }
 
 function registerSendButton(usernameAndId) {
-  usersRequestedButtons.push(usernameAndId + sendButtonId);
+  const key = usernameAndId + sendButtonId;
+  if (usersRequestedButtons.indexOf(key) === -1)
+    usersRequestedButtons.push(key);
 
   return new ButtonBuilder()
     .setCustomId(sendButtonId)
@@ -169,7 +171,9 @@ function registerSendButton(usernameAndId) {
 }
 
 function registerRecordButton(usernameAndId) {
-  usersRequestedButtons.push(usernameAndId + recordButtonId);
+  const key = usernameAndId + recordButtonId;
+  if (usersRequestedButtons.indexOf(key) === -1)
+    usersRequestedButtons.push(key);
 
   return new ButtonBuilder()
     .setCustomId(recordButtonId)
@@ -554,8 +558,7 @@ function handleUserRecordingAttempt(interaction, usernameAndId) {
   });
 }
 
-async function respondRecordCommandWithButtons(message) {
-  const usernameAndId = findUsernameAndId(message.author.id);
+async function respondRecordCommandWithButtons(message, usernameAndId) {
   const channel = message.channel;
 
   let components;
@@ -584,10 +587,18 @@ async function respondRecordCommandWithButtons(message) {
     });
 }
 
+function ignoreOrRespondToRecordCommand(message) {
+  const usernameAndId = findUsernameAndId(message.author.id);
+  if (!audioReceiveStreamByUser[usernameAndId]) {
+    tryClearExcessMessages(usernameAndId);
+    respondRecordCommandWithButtons(message, usernameAndId);
+  }
+}
+
 client.on("messageCreate", (message) => {
   const contentLowerCase = message.content.toLowerCase();
   if (contentLowerCase == ".record" || contentLowerCase == ". record") {
-    respondRecordCommandWithButtons(message);
+    ignoreOrRespondToRecordCommand(message);
   }
 });
 
