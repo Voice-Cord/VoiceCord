@@ -33,10 +33,14 @@ require("dotenv/config");
 const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
-const excessMessagesByUser = [];
 const voiceRecorderVoiceChannel = "Voice-Cord";
+const excessMessagesByUser = [];
+
 const audioReceiveStreamByUser = {};
 const connectedChannelByChannelId = {};
+
+// The voice channels users have been in, before starting record
+const recordingUsersInitialChannel = {};
 
 const client = new Client({
   intents: [
@@ -240,10 +244,12 @@ function findUsernameAndId(userId) {
   else console.log(`User: "${user}" not found.`);
 }
 
-function finishVoiceNote(audioReceiveStream, usernameAndId, guildId) {
-  getVoiceConnection(guildId).disconnect();
+function finishVoiceNote(audioReceiveStream, usernameAndId, message) {
+  message.member.voice.setChannel(recordingUsersInitialChannel[usernameAndId]);
+  getVoiceConnection(message.guildId).disconnect();
   audioReceiveStream.emit("finish");
   delete audioReceiveStreamByUser[usernameAndId];
+  delete recordingUsersInitialChannel[usernameAndId];
 }
 
 function tryFinishVoiceNoteOrReplyError(message) {
@@ -261,7 +267,7 @@ function tryFinishVoiceNoteOrReplyError(message) {
     return;
   }
 
-  finishVoiceNote(audioReceiveStream, usernameAndId, message.guildId);
+  finishVoiceNote(audioReceiveStream, usernameAndId, message);
 }
 
 async function createAndSendVideo(
@@ -276,7 +282,7 @@ async function createAndSendVideo(
 
   // Have to add 2 frames, so it can be played and seeked on mobile
   video.add(webpDataUrlContainerObj, 1);
-  video.add(webpDataUrlContainerObj, audioDuration * 1000 + 500); // Add 500, because
+  video.add(webpDataUrlContainerObj, audioDuration * 1000); // Add 500, because
 
   const webmBlobArray = video.compile(true);
 
@@ -375,7 +381,12 @@ function cleanupFiles(files) {
   fs.unlink(files.videofileFinal, () => {});
 }
 
-function createListeningStream(receiver, userId, message) {
+function stopRecording(audioReceiveStream, usernameAndId) {
+  audioReceiveStream.destroy();
+  delete audioReceiveStreamByUser[usernameAndId];
+}
+
+function createVoiceNote(receiver, userId, message) {
   const usernameAndId = findUsernameAndId(userId);
   const files = generateFileNames(usernameAndId);
 
@@ -387,14 +398,9 @@ function createListeningStream(receiver, userId, message) {
 
   const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
 
-  const clearAudioReceiveStream = () => {
-    audioReceiveStream.destroy();
-    delete audioReceiveStreamByUser[usernameAndId];
-  };
-
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
-  //Finish is invoked by our code when voice note is supposed to be sent
+  //Finish is invoked by our code when voice note send action is made by user
   audioReceiveStream.on("finish", () => {
     fileWriter.end();
     tryClearExcessMessages(usernameAndId);
@@ -417,24 +423,21 @@ function createListeningStream(receiver, userId, message) {
           () => cleanupFiles(files)
         );
 
-        clearAudioReceiveStream();
-        audioReceiveStream.destroy();
+        stopRecording(audioReceiveStream, usernameAndId);
       }
     );
   });
 
   audioReceiveStream.on("error", () => {
-    abortRecording(files);
-
-    audioReceiveStream.destroy();
-    clearAudioReceiveStream();
+    abortRecording(files, audioReceiveStream, usernameAndId);
   });
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
 
-function abortRecording(files) {
+function abortRecording(files, audioReceiveStream, usernameAndId) {
   cleanupFiles(files);
+  stopRecording(audioReceiveStream, usernameAndId);
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
 
@@ -481,7 +484,7 @@ function startRecordingUser(message, usernameAndId) {
   connectedChannelByChannelId[channel.id] = connectionChannel;
 
   const receiver = connectionChannel.receiver;
-  createListeningStream(receiver, userId, message);
+  createVoiceNote(receiver, userId, message);
 
   message
     .reply(message.member.displayName + " is Recording!")
@@ -491,14 +494,26 @@ function startRecordingUser(message, usernameAndId) {
     });
 }
 
+function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
+  const voice = message.member.voice;
+  const recorderChannel = findVoiceRecorderChannel(message.guild);
+  recordingUsersInitialChannel[usernameAndId] = voice.channel;
+  if ((voice.channel.id, recorderChannel.id)) return Promise.resolve();
+  else return voice.setChannel(recorderChannel);
+}
+
 client.on("messageCreate", (message) => {
   if (message.content === "r") {
     const usernameAndId = findUsernameAndId(message.author.id);
     markExcessMessage(usernameAndId, message);
 
-    if (!message.member.voice.channel) {
-      respondRecordingAttemptWithInviteLink(message, usernameAndId);
-    } else startRecordingUser(message, usernameAndId);
+    moveUserToVoiceCordVCIfNeeded(message, usernameAndId).then(() => {
+      if (!message.member.voice.channel) {
+        respondRecordingAttemptWithInviteLink(message, usernameAndId);
+      } else {
+        startRecordingUser(message, usernameAndId);
+      }
+    });
   }
   if (message.content === "a") {
     tryFinishVoiceNoteOrReplyError(message);
@@ -517,7 +532,7 @@ function abortRecordingAndLeaveVoiceChannel(
 
   if (audioReceiveStream) {
     audioReceiveStream.emit("error");
-    getVoiceConnection(guildId).disconnect();
+    getVoiceConnection(userOldVoiceState.guildId).disconnect();
     delete audioReceiveStreamByUser[usernameAndId];
   }
 }
@@ -543,7 +558,3 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 });
 
 client.login(process.env.TOKEN);
-finishVoiceNote;
-finishVoiceNote;
-tryFinishVoiceNoteOrReplyError;
-tryFinishVoiceNoteOrReplyError;
