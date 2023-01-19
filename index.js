@@ -137,7 +137,6 @@ function tryClearExcessMessages(usernameAndId) {
         });
       });
 
-      console.log(message.content);
       message.delete();
     });
 
@@ -553,7 +552,7 @@ function startRecordingUser(interaction, usernameAndId) {
     content: interaction.member.displayName + " is recording!",
     components: [row(registerSendButton(usernameAndId))],
   });
-  markExcessMessage(interaction.message, usernameAndId);
+  markExcessMessage(usernameAndId, interaction.message);
 }
 
 function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
@@ -630,7 +629,6 @@ client.on("interactionCreate", (interaction) => {
       usernameAndId.length,
       interaction.customId.length
     );
-    console.log(buttonTypeId);
     if (buttonIdsToFunctions[buttonTypeId](interaction, usernameAndId)) {
       const indexToRemove = usersRequestedButtons.indexOf(
         usernameAndId + interaction.customId
