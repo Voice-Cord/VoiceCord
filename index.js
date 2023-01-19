@@ -69,6 +69,8 @@ let usersRequestedButtons = [];
 const audioReceiveStreamByUser = {};
 const connectedChannelByChannelId = {};
 
+const ffmpegJobs = [];
+
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel = {};
 
@@ -358,44 +360,65 @@ async function createAndSendVideo(
   fs.writeFileSync(files.videofileTemp, Buffer.from(webmBlobArray));
   console.log(`✅ Written video ${files.videofileTemp}`);
 
-  ffmpeg.FS("writeFile", "video_t.webm", await fetchFile(files.videofileTemp));
-  ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
-  await ffmpeg.run(
-    "-i",
-    "video_t.webm",
-    "-i",
-    "audio.wav",
-    "-c:v",
-    "copy",
-    "-map",
-    "0:v:0",
-    "-map",
-    "1:a:0",
-    "-c:a",
-    "opus",
-    "-strict",
-    "-2",
-    "-b:a",
-    "16k",
-    "video.webm"
-  );
-  await fs.promises.writeFile(
-    files.videofileFinal,
-    ffmpeg.FS("readFile", "video.webm")
-  );
-  console.log(`✅ Combined video and audio ${files.videofileFinal}`);
+  const combineAudioVideoAndSend = async () => {
+    ffmpeg.FS(
+      "writeFile",
+      "video_t.webm",
+      await fetchFile(files.videofileTemp)
+    );
+    ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
+    await ffmpeg.run(
+      "-i",
+      "video_t.webm",
+      "-i",
+      "audio.wav",
+      "-c:v",
+      "copy",
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:a",
+      "opus",
+      "-strict",
+      "-2",
+      "-b:a",
+      "16k",
+      "video.webm"
+    );
+    await fs.promises.writeFile(
+      files.videofileFinal,
+      ffmpeg.FS("readFile", "video.webm")
+    );
+    console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-  interaction.deferUpdate();
-  interaction.channel
-    .send({
-      files: [files.videofileFinal],
-    })
-    .then(() => {
-      tryClearExcessMessages(usernameAndId);
-      sendCallback();
-    });
+    interaction.deferUpdate();
+    interaction.channel
+      .send({
+        files: [files.videofileFinal],
+      })
+      .then(() => {
+        tryClearExcessMessages(usernameAndId);
+        sendCallback();
+      });
 
-  console.log(`✅ Sent video ${files.videofileFinal}`);
+    console.log(`✅ Sent video ${files.videofileFinal}`);
+
+    while (ffmpegJobs.length !== 0) {
+      const job = ffmpegJobs.pop();
+      job();
+    }
+  };
+
+  ffmpegJobs.push(combineAudioVideoAndSend);
+
+  // If this is the first job, then execute it. If it is a later job,
+  // just add it to the array, a couple of lines before,
+  // and it will get executed in the method
+  if (ffmpegJobs.length === 1) {
+    await ffmpegJobs[0]();
+    ffmpegJobs.splice(0, 1);
+  }
 }
 
 function generateFileNames(username) {
