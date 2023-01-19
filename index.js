@@ -168,7 +168,7 @@ function registerSendButton(usernameAndId) {
     usersRequestedButtons.push(key);
 
   return new ButtonBuilder()
-    .setCustomId(sendButtonId)
+    .setCustomId(usernameAndId + sendButtonId)
     .setLabel("📨 Send")
     .setStyle(ButtonStyle.Success);
 }
@@ -179,7 +179,7 @@ function registerRecordButton(usernameAndId) {
     usersRequestedButtons.push(key);
 
   return new ButtonBuilder()
-    .setCustomId(recordButtonId)
+    .setCustomId(usernameAndId + recordButtonId)
     .setLabel("🎙️ Record")
     .setStyle(ButtonStyle.Danger);
 }
@@ -625,10 +625,13 @@ client.on("interactionCreate", (interaction) => {
   if (!interaction.isButton()) return;
 
   const usernameAndId = findUsernameAndId(interaction.user.id);
-  if (usersRequestedButtons.includes(usernameAndId + interaction.customId)) {
-    if (
-      buttonIdsToFunctions[interaction.customId](interaction, usernameAndId)
-    ) {
+  if (interaction.customId.includes(usernameAndId)) {
+    const buttonTypeId = interaction.customId.substring(
+      usernameAndId.length,
+      interaction.customId.length
+    );
+    console.log(buttonTypeId);
+    if (buttonIdsToFunctions[buttonTypeId](interaction, usernameAndId)) {
       const indexToRemove = usersRequestedButtons.indexOf(
         usernameAndId + interaction.customId
       );
