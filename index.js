@@ -313,9 +313,11 @@ function findUsernameAndId(userId) {
 }
 
 function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
-  interaction.member.voice.setChannel(
-    recordingUsersInitialChannel[usernameAndId]
-  );
+  if (interaction.member.voice) {
+    interaction.member.voice.setChannel(
+      recordingUsersInitialChannel[usernameAndId]
+    );
+  }
   getVoiceConnection(interaction.guildId).disconnect();
   audioReceiveStream.emit("finish", interaction);
 
@@ -558,15 +560,12 @@ function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
   const voice = message.member.voice;
   const recorderChannel = findVoiceRecorderChannel(message.guild);
   recordingUsersInitialChannel[usernameAndId] = voice.channel;
-  if ((voice.channel.id, recorderChannel.id)) return Promise.resolve();
+  if (voice.channel.id === recorderChannel.id) return Promise.resolve();
   else return voice.setChannel(recorderChannel);
 }
 
 function handleUserRecordStartAction(interaction, usernameAndId) {
-  if (
-    interaction.member.voice.channel !==
-    findVoiceRecorderChannel(interaction.guild)
-  ) {
+  if (!interaction.member.voice.channel) {
     interaction.reply({
       content: `❌\nYou first have to join the \`${voiceRecorderVoiceChannel}\` VC!\nPro Tip: Use the button that says \`${joinVCButtonLabel}\``,
       ephemeral: true,
