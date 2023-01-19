@@ -137,6 +137,7 @@ function tryClearExcessMessages(usernameAndId) {
         });
       });
 
+      console.log(message.content);
       message.delete();
     });
 
@@ -443,7 +444,7 @@ function getAudioDuration(files) {
 }
 
 function cleanupFiles(files) {
-  fs.unlink(files.webpfileTemp, () => {});
+  // fs.unlink(files.webpfileTemp, () => {});
   fs.unlink(files.audiofileTemp, () => {});
   fs.unlink(files.videofileTemp, () => {});
   fs.unlink(files.videofileFinal, () => {});
@@ -542,6 +543,7 @@ function startRecordingUser(interaction, usernameAndId) {
 
   usersRequestedButtons = [];
   tryClearExcessMessages(usernameAndId);
+
   interaction.deferReply();
   interaction.deleteReply();
 
@@ -549,6 +551,7 @@ function startRecordingUser(interaction, usernameAndId) {
     content: interaction.member.displayName + " is recording!",
     components: [row(registerSendButton(usernameAndId))],
   });
+  markExcessMessage(interaction.message, usernameAndId);
 }
 
 function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
@@ -598,14 +601,10 @@ async function respondRecordCommandWithButtons(message, usernameAndId) {
 
   message.delete();
 
-  channel
-    .send({
-      content: message.member.displayName + " wants to record!",
-      components: [components],
-    })
-    .then((newMessage) => {
-      markExcessMessage(usernameAndId, newMessage);
-    });
+  channel.send({
+    content: message.member.displayName + " wants to record!",
+    components: [components],
+  });
 }
 
 function ignoreOrRespondToRecordCommand(message) {
@@ -656,8 +655,10 @@ function abortRecordingAndLeaveVoiceChannel(
 
   if (audioReceiveStream) {
     audioReceiveStream.emit("error");
-    getVoiceConnection(userOldVoiceState.guildId).disconnect();
     delete audioReceiveStreamByUser[usernameAndId];
+
+    if (Object.keys(audioReceiveStreamByUser).length === 0);
+    getVoiceConnection(userOldVoiceState.guildId).disconnect();
   }
 }
 
