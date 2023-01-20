@@ -512,7 +512,7 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
     const audioDuration = await getAudioDuration(files);
     console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
-    if (audioDuration < 0.2) {
+    if (audioDuration < 0.01) {
       console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
       interaction.reply({
         content: "You have to say something, to send a voice note!",
