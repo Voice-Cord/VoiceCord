@@ -208,7 +208,7 @@ async function createWebPFileFromCanvas(canvas, files, callback) {
 async function generateWebPFromRecording(user, files, callback) {
   const username = user.displayName;
 
-  const cnv_s = { x: 825, y: 280 }; // Canvas size
+  const cnv_s = { x: 826, y: 280 }; // Canvas size
   const cnv_col = "#5865f2"; // Canvas color
   const canvas = Canvas.createCanvas(cnv_s.x, cnv_s.y);
 
@@ -352,7 +352,7 @@ async function createAndSendVideo(
   const video = new Whammy.Video();
 
   // Have to add 2 frames, so it can be played and seeked on mobile
-  video.add(webpDataUrlContainerObj, 1);
+  video.add(webpDataUrlContainerObj, 16);
   video.add(webpDataUrlContainerObj, audioDuration * 1000); // Add 500, because
 
   const webmBlobArray = video.compile(true);
@@ -373,22 +373,14 @@ async function createAndSendVideo(
       "-i",
       "audio.wav",
       "-c:v",
-      "copy",
-      "-map",
-      "0:v:0",
-      "-map",
-      "1:a:0",
+      "libx264",
       "-c:a",
-      "opus",
-      "-strict",
-      "-2",
-      "-b:a",
-      "16k",
-      "video.webm"
+      "libmp3lame",
+      "video.mp4"
     );
     await fs.promises.writeFile(
       files.videofileFinal,
-      ffmpeg.FS("readFile", "video.webm")
+      ffmpeg.FS("readFile", "video.mp4")
     );
     console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
@@ -425,7 +417,7 @@ function generateFileNames(username) {
   const webpfileTemp = `frames/${username}`;
   const audiofileTemp = filename + `.wav`;
   const videofileTemp = filename + `_t.webm`;
-  const videofileFinal = filename + `.webm`;
+  const videofileFinal = filename + `.mp4`;
 
   return { audiofileTemp, videofileTemp, videofileFinal, webpfileTemp };
 }
