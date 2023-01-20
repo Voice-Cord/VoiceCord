@@ -36,6 +36,8 @@ const path = require("path");
 const request = require("request").defaults({ encoding: null });
 const sharp = require("sharp");
 
+const WEBM_FRAME_MAX_LIMIT = 32766;
+
 require("dotenv/config");
 
 class OpusDecodingStream extends Transform {
@@ -320,6 +322,7 @@ function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
     );
   }
   getVoiceConnection(interaction.guildId).disconnect();
+  interaction.deferUpdate();
   audioReceiveStream.emit("finish", interaction);
 
   delete audioReceiveStreamByUser[usernameAndId];
@@ -352,8 +355,30 @@ async function createAndSendVideo(
   const video = new Whammy.Video();
 
   // Have to add 2 frames, so it can be played and seeked on mobile
-  video.add(webpDataUrlContainerObj, 16);
-  video.add(webpDataUrlContainerObj, audioDuration * 1000); // Add 500, because
+  video.add(webpDataUrlContainerObj, 30);
+
+  // This is necessary, as one can only add a frame to webm with the max length of 32766 ms.
+  const addCalculatedFrameLengths = () => {
+    const audioDurationMs = audioDuration * 1000;
+    const frames = audioDurationMs / WEBM_FRAME_MAX_LIMIT;
+
+    let curFrameEndMs = 0;
+    let curTimeToAdd = 0;
+
+    for (let i = 0; i < frames; i++) {
+      if (curFrameEndMs + WEBM_FRAME_MAX_LIMIT > audioDurationMs) {
+        curTimeToAdd = audioDurationMs - curFrameEndMs;
+        console.log("Test");
+      } else {
+        curTimeToAdd = WEBM_FRAME_MAX_LIMIT;
+        curFrameEndMs += WEBM_FRAME_MAX_LIMIT;
+      }
+
+      video.add(webpDataUrlContainerObj, curTimeToAdd);
+    }
+  };
+
+  addCalculatedFrameLengths();
 
   const webmBlobArray = video.compile(true);
 
@@ -384,7 +409,6 @@ async function createAndSendVideo(
     );
     console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-    interaction.deferUpdate();
     interaction.channel
       .send({
         files: [files.videofileFinal],
