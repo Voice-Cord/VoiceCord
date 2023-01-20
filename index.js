@@ -652,9 +652,20 @@ function ignoreOrRespondToRecordCommand(message) {
   }
 }
 
+function wasOnlyBotMentioned(message) {
+  const members = message.mentions.members;
+  return (
+    members.size === 1 && members.find((member) => member.id === client.user.id)
+  );
+}
+
 client.on("messageCreate", (message) => {
   const contentLowerCase = message.content.toLowerCase();
-  if (contentLowerCase == ".record" || contentLowerCase == ". record") {
+  if (
+    contentLowerCase == ".record" ||
+    contentLowerCase == ". record" ||
+    wasOnlyBotMentioned(message)
+  ) {
     ignoreOrRespondToRecordCommand(message);
   }
 });
@@ -716,8 +727,8 @@ function didRecordingUserLeaveChannel(oldState, newState) {
 function didMoveIntoVoiceRecorderChannel(oldState, newState) {
   const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild).id;
   if (
-    oldState.channel.id !== voiceRecorderChannelId &&
-    newState.channel.id === voiceRecorderChannelId
+    oldState.channelId !== voiceRecorderChannelId &&
+    newState.channelId === voiceRecorderChannelId
   ) {
     return true;
   } else {
@@ -728,8 +739,8 @@ function didMoveIntoVoiceRecorderChannel(oldState, newState) {
 function didMoveOutOfVoiceRecorderChannel(oldState, newState) {
   const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild).id;
   if (
-    oldState.channel.id === voiceRecorderChannelId &&
-    newState.channel.id !== voiceRecorderChannelId
+    oldState.channelId === voiceRecorderChannelId &&
+    newState.channelId !== voiceRecorderChannelId
   ) {
     return true;
   } else {
@@ -767,6 +778,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
     }
   }
 
+  //TODO: hasEVERYrecordinguserleftchannelwithbot - test if there is no recording user inside vc anymore
   const { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn } =
     didRecordingUserLeaveChannel(oldState, newState);
 
