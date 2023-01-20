@@ -542,6 +542,7 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
 
 function abortRecording(files, audioReceiveStream, usernameAndId) {
   cleanupFiles(files);
+  console.log(files);
   stopRecording(audioReceiveStream, usernameAndId);
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
@@ -708,20 +709,24 @@ function abortRecordingAndLeaveVoiceChannel(
     delete audioReceiveStreamByUser[usernameAndId];
 
     if (Object.keys(audioReceiveStreamByUser).length === 0);
-    getVoiceConnection(userOldVoiceState.guildId).disconnect();
+    getVoiceConnection(userOldVoiceState.guild?.id).disconnect();
   }
 }
 
-function didRecordingUserLeaveChannel(oldState, newState) {
+function didRecordingUserLeaveChannelAndNowEmpty(oldState, newState) {
   const channelTheBotIsIn = connectedChannelByChannelId[oldState.channelId];
 
   //TODO: Also if check if user exists in recording users dictinoary
   const hasElseThanBotChangedVoiceState = oldState.id !== client.user.id;
   const hasChangedChannel = oldState.channelId !== newState.channelId;
-  const hasRecordingUserLeftChannelWithBot =
-    hasChangedChannel && channelTheBotIsIn && hasElseThanBotChangedVoiceState;
+  const nooneRecording = oldState.channel?.members.size === 1; //Check for one, because if user leaves, bot has still not yet left
+  const hasEveryRecordingUserLeftChannelWithBot =
+    hasChangedChannel &&
+    channelTheBotIsIn &&
+    hasElseThanBotChangedVoiceState &&
+    nooneRecording;
 
-  return { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn };
+  return { hasEveryRecordingUserLeftChannelWithBot, channelTheBotIsIn };
 }
 
 function didMoveIntoVoiceRecorderChannel(oldState, newState) {
@@ -768,7 +773,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
       newState.member.voice.setDeaf(true);
     } else if (
       didMoveOutOfVoiceRecorderChannel(oldState, newState) &&
-      shouldUndeafVoice(newState)
+      shouldUndeafVoice(oldState)
     ) {
       voicesToUndeafOnceLeavingVoiceRecorderChannel =
         voicesToUndeafOnceLeavingVoiceRecorderChannel.filter(
@@ -779,10 +784,10 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   }
 
   //TODO: hasEVERYrecordinguserleftchannelwithbot - test if there is no recording user inside vc anymore
-  const { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn } =
-    didRecordingUserLeaveChannel(oldState, newState);
+  const { hasEveryRecordingUserLeftChannelWithBot, channelTheBotIsIn } =
+    didRecordingUserLeaveChannelAndNowEmpty(oldState, newState);
 
-  if (hasRecordingUserLeftChannelWithBot) {
+  if (hasEveryRecordingUserLeftChannelWithBot) {
     abortRecordingAndLeaveVoiceChannel(oldState, channelTheBotIsIn);
   }
 });
