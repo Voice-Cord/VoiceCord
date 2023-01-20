@@ -63,6 +63,9 @@ const recordButtonId = "record";
 const sendButtonId = "send";
 
 const voiceRecorderVoiceChannel = "Voice-Cord";
+
+let voicesToUndeafOnceLeavingVoiceRecorderChannel = [];
+
 const excessMessagesByUser = [];
 
 // The values are: "usernameAndId + <buttonId>"
@@ -710,7 +713,60 @@ function didRecordingUserLeaveChannel(oldState, newState) {
   return { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn };
 }
 
+function didMoveIntoVoiceRecorderChannel(oldState, newState) {
+  const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild).id;
+  if (
+    oldState.channel.id !== voiceRecorderChannelId &&
+    newState.channel.id === voiceRecorderChannelId
+  ) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function didMoveOutOfVoiceRecorderChannel(oldState, newState) {
+  const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild).id;
+  if (
+    oldState.channel.id === voiceRecorderChannelId &&
+    newState.channel.id !== voiceRecorderChannelId
+  ) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function isVoiceDeafened(voiceState) {
+  return voiceState.member.voice.deaf;
+}
+
+function shouldUndeafVoice(voiceState) {
+  return voicesToUndeafOnceLeavingVoiceRecorderChannel.includes(
+    voiceState.member.id
+  );
+}
+
 client.on("voiceStateUpdate", (oldState, newState) => {
+  if (oldState.member.id !== client.user.id) {
+    if (
+      didMoveIntoVoiceRecorderChannel(oldState, newState) &&
+      !isVoiceDeafened(oldState)
+    ) {
+      voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
+      newState.member.voice.setDeaf(true);
+    } else if (
+      didMoveOutOfVoiceRecorderChannel(oldState, newState) &&
+      shouldUndeafVoice(newState)
+    ) {
+      voicesToUndeafOnceLeavingVoiceRecorderChannel =
+        voicesToUndeafOnceLeavingVoiceRecorderChannel.filter(
+          (id) => id !== newState.member.id
+        );
+      oldState.member.voice.setDeaf(false);
+    }
+  }
+
   const { hasRecordingUserLeftChannelWithBot, channelTheBotIsIn } =
     didRecordingUserLeaveChannel(oldState, newState);
 
