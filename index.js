@@ -368,7 +368,6 @@ async function createAndSendVideo(
     for (let i = 0; i < frames; i++) {
       if (curFrameEndMs + WEBM_FRAME_MAX_LIMIT > audioDurationMs) {
         curTimeToAdd = audioDurationMs - curFrameEndMs;
-        console.log("Test");
       } else {
         curTimeToAdd = WEBM_FRAME_MAX_LIMIT;
         curFrameEndMs += WEBM_FRAME_MAX_LIMIT;
