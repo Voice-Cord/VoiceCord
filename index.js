@@ -398,26 +398,24 @@ async function createAndSendVideo(
         files: [files.videofileFinal],
       })
       .then(() => {
+        console.log(`✅ Sent video ${files.videofileFinal}`);
         tryClearExcessMessages(usernameAndId);
         sendCallback();
       });
-
-    console.log(`✅ Sent video ${files.videofileFinal}`);
-
-    while (ffmpegJobs.length !== 0) {
-      const job = ffmpegJobs.pop();
-      job();
-    }
   };
 
   ffmpegJobs.push(combineAudioVideoAndSend);
 
-  // If this is the first job, then execute it. If it is a later job,
-  // just add it to the array, a couple of lines before,
-  // and it will get executed in the method
   if (ffmpegJobs.length === 1) {
     await ffmpegJobs[0]();
-    ffmpegJobs.splice(0, 1);
+
+    // If there has been another ffmpeg request in the meantime, execute them.
+    while (ffmpegJobs.length > 1) {
+      const job = ffmpegJobs.pop();
+      job();
+    }
+
+    ffmpegJobs.pop();
   }
 }
 
@@ -468,7 +466,7 @@ function getAudioDuration(files) {
 }
 
 function cleanupFiles(files) {
-  // fs.unlink(files.webpfileTemp, () => {});
+  fs.unlink(files.webpfileTemp, () => {});
   fs.unlink(files.audiofileTemp, () => {});
   fs.unlink(files.videofileTemp, () => {});
   fs.unlink(files.videofileFinal, () => {});
