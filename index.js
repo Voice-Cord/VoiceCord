@@ -523,7 +523,7 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
       return;
     }
 
-    interaction.deferReply();
+    interaction.deferUpdate();
 
     generateWebPFromRecording(
       member,
