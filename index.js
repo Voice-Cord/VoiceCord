@@ -534,15 +534,15 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
   });
 
   audioReceiveStream.on("error", () => {
-    abortRecording(files, audioReceiveStream, usernameAndId);
+    abortRecording(files, audioReceiveStream, usernameAndId, fileWriter);
   });
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
 
-function abortRecording(files, audioReceiveStream, usernameAndId) {
+function abortRecording(files, audioReceiveStream, usernameAndId, fileWriter) {
+  fileWriter.end();
   cleanupFiles(files);
-  console.log(files);
   stopRecording(audioReceiveStream, usernameAndId);
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
