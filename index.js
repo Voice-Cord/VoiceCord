@@ -325,7 +325,6 @@ function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
     );
   }
   getVoiceConnection(interaction.guildId).disconnect();
-  interaction.deferUpdate();
   audioReceiveStream.emit("finish", interaction);
 
   delete audioReceiveStreamByUser[usernameAndId];
@@ -506,19 +505,30 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
   //Finish is invoked by our code when voice note send action is made by user
-  audioReceiveStream.on("finish", (interaction) => {
+  audioReceiveStream.on("finish", async (interaction) => {
     fileWriter.end();
     tryClearExcessMessages(usernameAndId);
 
-    console.log(`✅ Recorded ${files.audiofileTemp}`);
+    const audioDuration = await getAudioDuration(files);
+    console.log(`ℹ️ Audio duration: ${audioDuration}`);
+
+    if (audioDuration < 0.2) {
+      console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
+      interaction.reply({
+        content: "You have to say something, to send a voice note!",
+        ephemeral: true,
+      });
+      cleanupFiles(files);
+
+      return;
+    }
+
+    interaction.deferReply();
 
     generateWebPFromRecording(
       member,
       files,
       async (webpDataUrlContainerObj) => {
-        const audioDuration = await getAudioDuration(files);
-        console.log(`ℹ️ Audio duration: ${audioDuration}`);
-
         createAndSendVideo(
           interaction,
           webpDataUrlContainerObj,
