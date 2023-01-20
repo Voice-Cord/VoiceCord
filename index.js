@@ -635,15 +635,11 @@ async function respondRecordCommandWithButtons(message, usernameAndId) {
 
   let components;
   if (message.member.voice.channel) {
-    components = row(
-      registerRecordButton(usernameAndId),
-      registerSendButton(usernameAndId)
-    );
+    components = row(registerRecordButton(usernameAndId));
   } else {
     components = row(
-      registerRecordButton(usernameAndId),
-      registerSendButton(usernameAndId),
-      await createJoinVcButton(message.guild)
+      await createJoinVcButton(message.guild),
+      registerRecordButton(usernameAndId)
     );
   }
 
