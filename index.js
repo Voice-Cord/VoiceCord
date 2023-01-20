@@ -401,7 +401,7 @@ async function createAndSendVideo(
       "-c:v",
       "libx264",
       "-c:a",
-      "libmp3lame",
+      "aac",
       "video.mp4"
     );
     await fs.promises.writeFile(
