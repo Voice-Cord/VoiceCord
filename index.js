@@ -54,6 +54,16 @@ class OpusDecodingStream extends Transform {
   }
 }
 
+function toHoursAndMinutes(totalSeconds) {
+  const totalMinutes = Math.floor(totalSeconds / 60);
+
+  const seconds = totalSeconds % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return { h: hours, m: minutes, s: seconds };
+}
+
 const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
@@ -210,7 +220,7 @@ async function createWebPFileFromCanvas(canvas, files, callback) {
     });
 }
 
-async function generateWebPFromRecording(user, files, callback) {
+async function generateWebPFromRecording(user, files, audioDuration, callback) {
   const username = user.displayName;
 
   const cnv_s = { x: 826, y: 280 }; // Canvas size
@@ -240,12 +250,12 @@ async function generateWebPFromRecording(user, files, callback) {
   const nme_x = avt_ml + avt_w + nme_ml; // Name x
   const nme_y = avt_y + nme_s; // Name y
 
-  const dte_col = "#5f6166"; // Date size
-  const dte_s = 30 * fnt_s; // Date size
-  const dte_mr = 200; // Date margin right
-  const dte_mt = 10; // Date margin right
-  const dte_x = cnt_x + cnt_w - dte_mr; // Date x
-  const dte_y = avt_y + dte_s + dte_mt; // Date y
+  const dur_col = "#5f6166"; // Dur size
+  const dur_s = 30 * fnt_s; // Dur size
+  const dur_mr = 200; // Dur margin right
+  const dur_mt = 10; // Dur margin right
+  const dur_x = cnt_x + cnt_w - dur_mr; // Dur x
+  const dur_y = avt_y + dur_s + dur_mt; // Dur y
 
   // "by" refers to the text, which is something like "This was recorded by .."
   const by_col = "#5b5251"; // By color
@@ -277,11 +287,14 @@ async function generateWebPFromRecording(user, files, callback) {
     ctx.fillText(username, nme_x, nme_y);
   };
 
-  const addDate = function () {
-    const time = currentTimeFormatted();
-    ctx.fillStyle = dte_col;
-    ctx.font = font(dte_s);
-    ctx.fillText(time, dte_x, dte_y);
+  const addDuration = function () {
+    ctx.fillStyle = dur_col;
+    ctx.font = font(dur_s);
+    ctx.fillText(
+      new Date(audioDuration * 1000).toISOString().slice(11, 19),
+      dur_x,
+      dur_y
+    );
   };
 
   // "by" refers to the text, which is something like "This was recorded by .."
@@ -291,17 +304,17 @@ async function generateWebPFromRecording(user, files, callback) {
     ctx.fillText(voiceRecorderBy, by_x, by_y);
   };
 
-  const add_Avatar_Username_Date_Length_Bytext = function () {
+  const add_Avatar_Username_Duration_Length_Bytext = function () {
     ctx.drawImage(avatar, avt_x, avt_y, avt_h, avt_w);
     addUsername();
-    addDate();
+    addDuration();
     addBytext();
 
     createWebPFileFromCanvas(canvas, files, callback);
   };
 
   const avatar = new Image();
-  avatar.onload = add_Avatar_Username_Date_Length_Bytext;
+  avatar.onload = add_Avatar_Username_Duration_Length_Bytext;
   avatar.onerror = (err) => console.log(err);
   avatar.src = await imageBufferFromUrl(
     user.displayAvatarURL({
@@ -528,7 +541,8 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
     generateWebPFromRecording(
       member,
       files,
-      async (webpDataUrlContainerObj) => {
+      audioDuration,
+      (webpDataUrlContainerObj) => {
         createAndSendVideo(
           interaction,
           webpDataUrlContainerObj,
