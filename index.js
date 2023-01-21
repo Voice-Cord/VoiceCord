@@ -521,7 +521,7 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
         content: "You have to say something, to send a voice note!",
         ephemeral: true,
       });
-      cleanupFiles(files);
+      abortRecording(files, audioReceiveStream, usernameAndId);
 
       return;
     }
@@ -548,14 +548,14 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
   });
 
   audioReceiveStream.on("error", () => {
-    abortRecording(files, audioReceiveStream, usernameAndId, fileWriter);
+    fileWriter.end();
+    abortRecording(files, audioReceiveStream, usernameAndId);
   });
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
 
 function abortRecording(files, audioReceiveStream, usernameAndId, fileWriter) {
-  fileWriter.end();
   cleanupFiles(files);
   stopRecording(audioReceiveStream, usernameAndId);
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
