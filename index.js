@@ -54,14 +54,8 @@ class OpusDecodingStream extends Transform {
   }
 }
 
-function toHoursAndMinutes(totalSeconds) {
-  const totalMinutes = Math.floor(totalSeconds / 60);
-
-  const seconds = totalSeconds % 60;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  return { h: hours, m: minutes, s: seconds };
+function secToHHMMSS(seconds) {
+  return new Date(seconds * 1000).toISOString().slice(11, 19);
 }
 
 const voiceRecorderDisplayName = "VoiceCord";
@@ -290,11 +284,7 @@ async function generateWebPFromRecording(user, files, audioDuration, callback) {
   const addDuration = function () {
     ctx.fillStyle = dur_col;
     ctx.font = font(dur_s);
-    ctx.fillText(
-      new Date(audioDuration * 1000).toISOString().slice(11, 19),
-      dur_x,
-      dur_y
-    );
+    ctx.fillText(secToHHMMSS(audioDuration), dur_x, dur_y);
   };
 
   // "by" refers to the text, which is something like "This was recorded by .."
