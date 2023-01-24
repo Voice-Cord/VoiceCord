@@ -336,7 +336,7 @@ function findUsernameAndId(userId) {
 }
 
 function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
-  moveToInitialVCIfNeeded(interaction.user);
+  moveToInitialVCIfNeeded(usernameAndId, interaction.member);
   //TODO only disconnect when is empty
   getVoiceConnection(interaction.guildId).disconnect();
   audioReceiveStream.emit("finish", interaction);
