@@ -65,6 +65,7 @@ const joinVCButtonLabel = "🔊 Join VC to record";
 
 const recordButtonId = "record";
 const sendButtonId = "send";
+const cancelButtonId = "cancel";
 
 const voiceRecorderVoiceChannel = "Voice-Cord";
 
@@ -76,16 +77,18 @@ const excessMessagesByUser = [];
 let usersRequestedButtons = [];
 
 const audioReceiveStreamByUser = {};
-const connectedChannelByChannelId = {};
+const connectedVoiceByChannelId = {};
 
 const ffmpegJobs = [];
 
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel = {};
 
+// buttonactions
 const buttonIdsToFunctions = {
   [recordButtonId]: handleUserRecordStartAction,
   [sendButtonId]: tryFinishVoiceNoteOrReplyError,
+  [cancelButtonId]: cancelRecording,
 };
 
 const client = new Client({
@@ -172,10 +175,23 @@ async function createJoinVcButton(guild) {
     .setURL(await generateInviteLinkToVoiceCordChannel(guild));
 }
 
-function registerSendButton(usernameAndId) {
-  const key = usernameAndId + sendButtonId;
+function registerButton(usernameAndId, buttonId) {
+  const key = usernameAndId + buttonId;
   if (usersRequestedButtons.indexOf(key) === -1)
     usersRequestedButtons.push(key);
+}
+
+function registerCancelButton(usernameAndId) {
+  registerButton(usernameAndId, cancelButtonId);
+
+  return new ButtonBuilder()
+    .setCustomId(usernameAndId + cancelButtonId)
+    .setLabel("❌ Cancel")
+    .setStyle(ButtonStyle.Secondary);
+}
+
+function registerSendButton(usernameAndId) {
+  registerButton(usernameAndId, sendButtonId);
 
   return new ButtonBuilder()
     .setCustomId(usernameAndId + sendButtonId)
@@ -184,9 +200,7 @@ function registerSendButton(usernameAndId) {
 }
 
 function registerRecordButton(usernameAndId) {
-  const key = usernameAndId + recordButtonId;
-  if (usersRequestedButtons.indexOf(key) === -1)
-    usersRequestedButtons.push(key);
+  registerButton(usernameAndId, recordButtonId);
 
   return new ButtonBuilder()
     .setCustomId(usernameAndId + recordButtonId)
@@ -322,11 +336,8 @@ function findUsernameAndId(userId) {
 }
 
 function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
-  if (interaction.member.voice) {
-    interaction.member.voice.setChannel(
-      recordingUsersInitialChannel[usernameAndId]
-    );
-  }
+  moveToInitialVCIfNeeded(interaction.user);
+  //TODO only disconnect when is empty
   getVoiceConnection(interaction.guildId).disconnect();
   audioReceiveStream.emit("finish", interaction);
 
@@ -492,7 +503,7 @@ function cleanupFiles(files) {
   fs.unlink(files.videofileFinal, () => {});
 }
 
-function stopRecording(audioReceiveStream, usernameAndId) {
+function clearAudioReceiveStream(audioReceiveStream, usernameAndId) {
   audioReceiveStream.destroy();
   delete audioReceiveStreamByUser[usernameAndId];
 }
@@ -542,22 +553,24 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
           () => cleanupFiles(files)
         );
 
-        stopRecording(audioReceiveStream, usernameAndId);
+        clearAudioReceiveStream(audioReceiveStream, usernameAndId);
       }
     );
   });
 
+  //This event gets emitted by us
   audioReceiveStream.on("error", () => {
-    fileWriter.end();
-    abortRecording(files, audioReceiveStream, usernameAndId);
+    fileWriter.end(() =>
+      abortRecording(files, audioReceiveStream, usernameAndId)
+    );
   });
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
 
-function abortRecording(files, audioReceiveStream, usernameAndId, fileWriter) {
+function abortRecording(files, audioReceiveStream, usernameAndId) {
   cleanupFiles(files);
-  stopRecording(audioReceiveStream, usernameAndId);
+  clearAudioReceiveStream(audioReceiveStream, usernameAndId);
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
 
@@ -583,7 +596,7 @@ function startRecordingUser(interaction, usernameAndId) {
   const channel = interaction.member.voice.channel;
   const userId = interaction.user.id;
 
-  const connectionChannel = joinVoiceChannel({
+  const voiceConnection = joinVoiceChannel({
     channelId: channel.id,
     guildId: channel.guild.id,
     selfDeaf: false,
@@ -591,9 +604,9 @@ function startRecordingUser(interaction, usernameAndId) {
     adapterCreator: channel.guild.voiceAdapterCreator,
   });
 
-  connectedChannelByChannelId[channel.id] = connectionChannel;
+  connectedVoiceByChannelId[channel.id] = voiceConnection;
 
-  const receiver = connectionChannel.receiver;
+  const receiver = voiceConnection.receiver;
   startVoiceNoteRecording(receiver, userId, interaction);
 
   usersRequestedButtons = [];
@@ -604,8 +617,14 @@ function startRecordingUser(interaction, usernameAndId) {
 
   interaction.message.edit({
     content: interaction.member.displayName + " is recording!",
-    components: [row(registerSendButton(usernameAndId))],
+    components: [
+      row(
+        registerSendButton(usernameAndId),
+        registerCancelButton(usernameAndId)
+      ),
+    ],
   });
+
   markExcessMessage(usernameAndId, interaction.message);
 }
 
@@ -704,39 +723,30 @@ client.on("interactionCreate", (interaction) => {
   }
 });
 
-function abortRecordingAndLeaveVoiceChannel(
-  userOldVoiceState,
-  botConnectedChannel
-) {
-  botConnectedChannel.disconnect();
-  const usernameAndId = findUsernameAndId(userOldVoiceState.id);
+function abortRecordingAndLeaveVoiceChannelIfEmpty(member, botVoice) {
+  const usernameAndId = findUsernameAndId(member.id);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
   tryClearExcessMessages(usernameAndId);
 
   if (audioReceiveStream) {
     audioReceiveStream.emit("error");
-    delete audioReceiveStreamByUser[usernameAndId];
 
-    if (Object.keys(audioReceiveStreamByUser).length === 0);
-    getVoiceConnection(userOldVoiceState.guild?.id).disconnect();
+    if (Object.keys(audioReceiveStreamByUser).length === 0) {
+      botVoice.disconnect();
+    }
   }
 }
 
 function didRecordingUserLeaveChannelAndNowEmpty(oldState, newState) {
-  const channelTheBotIsIn = connectedChannelByChannelId[oldState.channelId];
+  const botVoice = connectedVoiceByChannelId[oldState.channelId];
 
-  //TODO: Also if check if user exists in recording users dictinoary
   const hasElseThanBotChangedVoiceState = oldState.id !== client.user.id;
   const hasChangedChannel = oldState.channelId !== newState.channelId;
-  const nooneRecording = oldState.channel?.members.size === 1; //Check for one, because if user leaves, bot has still not yet left
-  const hasEveryRecordingUserLeftChannelWithBot =
-    hasChangedChannel &&
-    channelTheBotIsIn &&
-    hasElseThanBotChangedVoiceState &&
-    nooneRecording;
+  const hasRecordingUserLeftChannelWithBot =
+    hasChangedChannel && botVoice && hasElseThanBotChangedVoiceState;
 
-  return { hasEveryRecordingUserLeftChannelWithBot, channelTheBotIsIn };
+  return { hasRecordingUserLeftChannelWithBot, botVoice };
 }
 
 function didMoveIntoVoiceRecorderChannel(oldState, newState) {
@@ -773,32 +783,61 @@ function shouldUndeafVoice(voiceState) {
   );
 }
 
-client.on("voiceStateUpdate", (oldState, newState) => {
-  if (oldState.member.id !== client.user.id) {
-    if (
-      didMoveIntoVoiceRecorderChannel(oldState, newState) &&
-      !isVoiceDeafened(oldState)
-    ) {
-      voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
-      newState.member.voice.setDeaf(true);
-    } else if (
-      didMoveOutOfVoiceRecorderChannel(oldState, newState) &&
-      shouldUndeafVoice(oldState)
-    ) {
-      voicesToUndeafOnceLeavingVoiceRecorderChannel =
-        voicesToUndeafOnceLeavingVoiceRecorderChannel.filter(
-          (id) => id !== newState.member.id
-        );
-      oldState.member.voice.setDeaf(false);
-    }
+function undeafenUser(memberId, voice) {
+  voicesToUndeafOnceLeavingVoiceRecorderChannel =
+    voicesToUndeafOnceLeavingVoiceRecorderChannel.filter(
+      (id) => id !== memberId
+    );
+  voice.setDeaf(false);
+}
+
+function moveToInitialVCIfNeeded(usernameAndId, member) {
+  if (member.voice) {
+    member.voice.setChannel(recordingUsersInitialChannel[usernameAndId]);
+  }
+}
+
+function cancelRecording(interaction, _usernameAndId) {
+  const member = interaction.member;
+  const usernameAndId = findUsernameAndId(member.id);
+  const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
+  audioReceiveStream.emit("error");
+
+  if (member.voice) {
+    moveToInitialVCIfNeeded(usernameAndId, member);
   }
 
-  //TODO: hasEVERYrecordinguserleftchannelwithbot - test if there is no recording user inside vc anymore
-  const { hasEveryRecordingUserLeftChannelWithBot, channelTheBotIsIn } =
+  const channelTheBotIsIn = connectedVoiceByChannelId[member.voice?.channelId];
+  if (channelTheBotIsIn) {
+    abortRecordingAndLeaveVoiceChannelIfEmpty(member, channelTheBotIsIn);
+  }
+
+  return true;
+}
+
+client.on("voiceStateUpdate", (oldState, newState) => {
+  if (oldState.member.id === client.user.id) return;
+
+  if (
+    didMoveIntoVoiceRecorderChannel(oldState, newState) &&
+    !isVoiceDeafened(oldState)
+  ) {
+    voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
+    newState.member.voice.setDeaf(true);
+  } else if (
+    didMoveOutOfVoiceRecorderChannel(oldState, newState) &&
+    shouldUndeafVoice(oldState)
+  ) {
+    undeafenUser(newState.member.id, oldState.member.voice);
+  }
+
+  const { hasRecordingUserLeftChannelWithBot, botVoice } =
     didRecordingUserLeaveChannelAndNowEmpty(oldState, newState);
 
-  if (hasEveryRecordingUserLeftChannelWithBot) {
-    abortRecordingAndLeaveVoiceChannel(oldState, channelTheBotIsIn);
+  //TODO also abort recording, if user left and there are still some left
+  //Because we want to stop a recording of a user, even if others are recording
+  if (hasRecordingUserLeftChannelWithBot) {
+    abortRecordingAndLeaveVoiceChannelIfEmpty(oldState.member, botVoice);
   }
 });
 
