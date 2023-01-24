@@ -519,43 +519,44 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
   //Finish is invoked by our code when voice note send action is made by user
-  audioReceiveStream.on("finish", async (interaction) => {
-    fileWriter.end();
-    tryClearExcessMessages(usernameAndId);
+  audioReceiveStream.on("finish", (interaction) => {
+    fileWriter.end(async () => {
+      tryClearExcessMessages(usernameAndId);
 
-    const audioDuration = await getAudioDuration(files);
-    console.log(`ℹ️ Audio duration: ${audioDuration}`);
+      const audioDuration = await getAudioDuration(files);
+      console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
-    if (audioDuration < 0.01) {
-      console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
-      interaction.reply({
-        content: "You have to say something, to send a voice note!",
-        ephemeral: true,
-      });
-      abortRecording(files, audioReceiveStream, usernameAndId);
+      if (audioDuration < 0.01) {
+        console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
+        interaction.reply({
+          content: "You have to say something, to send a voice note!",
+          ephemeral: true,
+        });
+        abortRecording(files, audioReceiveStream, usernameAndId);
 
-      return;
-    }
-
-    interaction.deferUpdate();
-
-    generateWebPFromRecording(
-      member,
-      files,
-      audioDuration,
-      (webpDataUrlContainerObj) => {
-        createAndSendVideo(
-          interaction,
-          webpDataUrlContainerObj,
-          usernameAndId,
-          audioDuration,
-          files,
-          () => cleanupFiles(files)
-        );
-
-        clearAudioReceiveStream(audioReceiveStream, usernameAndId);
+        return;
       }
-    );
+
+      interaction.deferUpdate();
+
+      generateWebPFromRecording(
+        member,
+        files,
+        audioDuration,
+        (webpDataUrlContainerObj) => {
+          createAndSendVideo(
+            interaction,
+            webpDataUrlContainerObj,
+            usernameAndId,
+            audioDuration,
+            files,
+            () => cleanupFiles(files)
+          );
+
+          clearAudioReceiveStream(audioReceiveStream, usernameAndId);
+        }
+      );
+    });
   });
 
   //This event gets emitted by us
