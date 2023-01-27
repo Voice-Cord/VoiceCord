@@ -79,6 +79,9 @@ let usersRequestedButtons = [];
 const audioReceiveStreamByUser = {};
 const connectedVoiceByChannelId = {};
 
+const recordCommand = ".record";
+const recordAlternativeCommand = ". record";
+
 const ffmpegJobs = [];
 
 // The voice channels users have been in, before starting record
@@ -692,12 +695,17 @@ function wasOnlyBotMentioned(message) {
 
 client.on("messageCreate", (message) => {
   const contentLowerCase = message.content.toLowerCase();
+
   if (
-    contentLowerCase == ".record" ||
-    contentLowerCase == ". record" ||
+    contentLowerCase === recordCommand ||
+    contentLowerCase === recordAlternativeCommand ||
     wasOnlyBotMentioned(message)
   ) {
     ignoreOrRespondToRecordCommand(message);
+  } else if (message.content.length > 1000 && Math.random() < 0.5) {
+    message.reply(
+      `Tired of sending long messages? Try VoiceCord by typing \`${recordCommand}\``
+    );
   }
 });
 
