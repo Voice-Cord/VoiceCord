@@ -588,7 +588,7 @@ async function generateInviteLinkToVoiceCordChannel(guild) {
   const voiceRecorderChannel = findVoiceRecorderChannel(guild);
   if (voiceRecorderChannel) return getInviteLink(voiceRecorderChannel);
   else {
-    const channel = await message.guild.channels.create({
+    const channel = await guild.channels.create({
       name: voiceRecorderVoiceChannel,
       type: ChannelType.GuildVoice,
     });
