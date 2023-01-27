@@ -687,10 +687,7 @@ function ignoreOrRespondToRecordCommand(message) {
 }
 
 function wasOnlyBotMentioned(message) {
-  const members = message.mentions.members;
-  return (
-    members.size === 1 && members.find((member) => member.id === client.user.id)
-  );
+  return "<@" + client.user.id + ">" === message.content;
 }
 
 client.on("messageCreate", (message) => {
