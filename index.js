@@ -641,7 +641,7 @@ function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
 }
 
 function handleUserRecordStartAction(interaction, usernameAndId) {
-  if (!interaction.member.voice.channel) {
+  if (!interaction.member?.voice?.channel) {
     interaction.reply({
       content: `❌\nYou first have to join the \`${voiceRecorderVoiceChannel}\` VC!\nPro Tip: Use the button that says \`${joinVCButtonLabel}\``,
       ephemeral: true,
