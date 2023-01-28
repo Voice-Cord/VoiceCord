@@ -36,7 +36,13 @@ const path = require("path");
 const request = require("request").defaults({ encoding: null });
 const sharp = require("sharp");
 
+const telemetryFile = "telemetry/info.txt";
+const telemetryTable =
+  "Username and Id | Audio Duration | Guild | Channel | Date | Recording count";
+
 const WEBM_FRAME_MAX_LIMIT = 32766;
+
+let recordingCount = 0;
 
 require("dotenv/config");
 
@@ -105,9 +111,35 @@ const client = new Client({
 });
 
 client.on("ready", async () => {
-  console.log("Bot is ready!");
+  console.log("Bot loaded!");
   await ffmpeg.load();
+  console.log("FFmpeg loaded!");
 });
+
+function currentDateAndTime() {
+  const date_ob = new Date();
+
+  const date = ("0" + date_ob.getDate()).slice(-2);
+  const month = ("0" + (date_ob.getMonth() + 1)).slice(-2);
+  const year = date_ob.getFullYear();
+  const hours = date_ob.getHours();
+  const minutes = date_ob.getMinutes();
+  const seconds = date_ob.getSeconds();
+
+  return (
+    year +
+    "-" +
+    month +
+    "-" +
+    date +
+    " " +
+    hours +
+    ":" +
+    minutes +
+    ":" +
+    seconds
+  );
+}
 
 function currentTimeFormatted() {
   const time = new Date().toLocaleTimeString([], {
@@ -401,7 +433,13 @@ async function createAndSendVideo(
   const webmBlobArray = video.compile(true);
 
   fs.writeFileSync(files.videofileTemp, Buffer.from(webmBlobArray));
-  console.log(`✅ Written video ${files.videofileTemp}`);
+  console.log(
+    `✅ Written video ${files.videofileTemp}, in guild: "` +
+      interaction.guild.name +
+      `", in channel: "` +
+      interaction?.channel?.name +
+      `"`
+  );
 
   const combineAudioVideoAndSend = async () => {
     ffmpeg.FS(
@@ -455,7 +493,7 @@ async function createAndSendVideo(
 
 function generateFileNames(username) {
   const date = currentTimeFormatted().replace(":", "_");
-  const filename = `recordings/${date}-${username}`;
+  const filename = `recordings/${date}__${username}`;
   const webpfileTemp = `frames/${username}`;
   const audiofileTemp = filename + `.wav`;
   const videofileTemp = filename + `_t.webm`;
@@ -511,6 +549,24 @@ function clearAudioReceiveStream(audioReceiveStream, usernameAndId) {
   delete audioReceiveStreamByUser[usernameAndId];
 }
 
+function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
+  fs.writeFile(telemetryFile, telemetryTable, { flag: "wx" }, function (err) {
+    if (err) {
+      if (err.code !== "EEXIST") {
+        console.log(err);
+        return;
+      } else {
+        console.log(`✅ ${telemetryFile} created!`);
+      }
+    }
+
+    const listItem = `\n${usernameAndId} | ${audioDuration}s | ${interaction?.guild?.name} | ${interaction?.channel?.name} | ${currentDateAndTime} | ${recordingCount}`;
+    fs.appendFile(telemetryFile, listItem, function (err) {
+      if (err) console.log(err);
+    });
+  });
+}
+
 function startVoiceNoteRecording(receiver, userId, interaction) {
   const usernameAndId = findUsernameAndId(userId);
   const files = generateFileNames(usernameAndId);
@@ -555,6 +611,10 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
             files,
             () => cleanupFiles(files)
           );
+
+          recordingCount += 1;
+          console.log("ℹ️ Recordings sent: " + recordingCount);
+          appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
 
           clearAudioReceiveStream(audioReceiveStream, usernameAndId);
         }
@@ -636,7 +696,7 @@ function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
   const voice = message.member?.voice;
   const recorderChannel = findVoiceRecorderChannel(message.guild);
   recordingUsersInitialChannel[usernameAndId] = voice.channel;
-  if (voice.channel.id === recorderChannel.id) return Promise.resolve();
+  if (voice.channelId === recorderChannel.id) return Promise.resolve();
   else return voice.setChannel(recorderChannel);
 }
 
