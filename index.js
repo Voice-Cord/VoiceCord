@@ -560,7 +560,11 @@ function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
       }
     }
 
-    const listItem = `\n${usernameAndId} | ${audioDuration}s | ${interaction?.guild?.name} | ${interaction?.channel?.name} | ${currentDateAndTime} | ${recordingCount}`;
+    const listItem = `\n${usernameAndId} | ${audioDuration}s | ${
+      interaction?.guild?.name
+    } | ${
+      interaction?.channel?.name
+    } | ${currentDateAndTime()} | ${recordingCount}`;
     fs.appendFile(telemetryFile, listItem, function (err) {
       if (err) console.log(err);
     });
