@@ -492,7 +492,7 @@ async function createAndSendVideo(
 }
 
 function generateFileNames(username) {
-  const date = currentTimeFormatted().replace(":", "_");
+  const date = currentTimeFormatted().replace(" ", "_");
   const filename = `recordings/${date}__${username}`;
   const webpfileTemp = `frames/${username}`;
   const audiofileTemp = filename + `.wav`;
