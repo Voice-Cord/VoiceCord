@@ -591,8 +591,13 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
 
       if (audioDuration < 0.01) {
         console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
+        let reply;
+        if (interaction.member.voice.selfMute)
+          reply = "You need to unmute yourself!";
+        else reply = "You have to say something, to send a voice note!";
+
         interaction.reply({
-          content: "You have to say something, to send a voice note!",
+          content: reply,
           ephemeral: true,
         });
         abortRecording(files, audioReceiveStream, usernameAndId);
@@ -712,6 +717,11 @@ function handleUserRecordStartAction(interaction, usernameAndId) {
     });
 
     return false;
+  } else if (interaction.member?.voice?.selfMute) {
+    interaction.reply({
+      content: "❌ You have to unmute yourself first!",
+      ephemeral: true,
+    });
   } else {
     moveUserToVoiceCordVCIfNeeded(interaction, usernameAndId).then(() => {
       startRecordingUser(interaction, usernameAndId);
