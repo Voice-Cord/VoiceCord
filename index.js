@@ -250,20 +250,20 @@ async function generateWebPFromRecording(user, files, audioDuration, callback) {
   const cnt_h = cnv_s.y - cnt_m * 2; // Avatar container height
 
   const avt_ml = 50; // Avatar left margin
-  const avt_h = 128; // Img height
-  const avt_w = 128; // Img width
-  const avt_x = cnt_m + avt_ml; // Img x
-  const avt_y = mid_y - avt_h / 2; // Img y
+  const avt_h = 128; // Avatar height
+  const avt_w = 128; // Avatar width
+  const avt_x = cnt_m + avt_ml; // Avatar x
+  const avt_y = mid_y - avt_h / 2; // Avatar y
 
   const nme_col = "#f6f6f6"; // Name color
-  const nme_s = (avt_h / 2.7) * fnt_s; // Name size
+  const nme_s = (avt_h / 3.4) * fnt_s; // Name size
   const nme_ml = 60; // Name margin left
   const nme_x = avt_ml + avt_w + nme_ml; // Name x
   const nme_y = avt_y + nme_s; // Name y
 
   const dur_col = "#5f6166"; // Dur size
   const dur_s = 30 * fnt_s; // Dur size
-  const dur_mr = 200; // Dur margin right
+  const dur_mr = 150; // Dur margin right
   const dur_mt = 10; // Dur margin right
   const dur_x = cnt_x + cnt_w - dur_mr; // Dur x
   const dur_y = avt_y + dur_s + dur_mt; // Dur y
@@ -597,7 +597,7 @@ async function generateInviteLinkToVoiceCordChannel(guild) {
 }
 
 function startRecordingUser(interaction, usernameAndId) {
-  const channel = interaction.member.voice.channel;
+  const channel = interaction.member?.voice.channel;
   const userId = interaction.user.id;
 
   const voiceConnection = joinVoiceChannel({
@@ -633,7 +633,7 @@ function startRecordingUser(interaction, usernameAndId) {
 }
 
 function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
-  const voice = message.member.voice;
+  const voice = message.member?.voice;
   const recorderChannel = findVoiceRecorderChannel(message.guild);
   recordingUsersInitialChannel[usernameAndId] = voice.channel;
   if (voice.channel.id === recorderChannel.id) return Promise.resolve();
@@ -661,7 +661,7 @@ async function respondRecordCommandWithButtons(message, usernameAndId) {
   const channel = message.channel;
 
   let components;
-  if (message.member.voice.channel) {
+  if (message.member?.voice.channel) {
     components = row(registerRecordButton(usernameAndId));
   } else {
     components = row(
@@ -756,7 +756,7 @@ function didRecordingUserLeaveChannelAndNowEmpty(oldState, newState) {
 }
 
 function didMoveIntoVoiceRecorderChannel(oldState, newState) {
-  const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild).id;
+  const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild)?.id;
   if (
     oldState.channelId !== voiceRecorderChannelId &&
     newState.channelId === voiceRecorderChannelId
@@ -767,25 +767,19 @@ function didMoveIntoVoiceRecorderChannel(oldState, newState) {
   }
 }
 
-function didMoveOutOfVoiceRecorderChannel(oldState, newState) {
-  const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild).id;
-  if (
-    oldState.channelId === voiceRecorderChannelId &&
-    newState.channelId !== voiceRecorderChannelId
-  ) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
 function isVoiceDeafened(voiceState) {
-  return voiceState.member.voice.deaf;
+  return voiceState.member?.voice.deaf;
 }
 
 function shouldUndeafVoice(voiceState) {
-  return voicesToUndeafOnceLeavingVoiceRecorderChannel.includes(
-    voiceState.member.id
+  const voiceRecorderChannelId = findVoiceRecorderChannel(voiceState.guild)?.id;
+
+  return (
+    voicesToUndeafOnceLeavingVoiceRecorderChannel.includes(
+      voiceState.member.id
+    ) &&
+    voiceState.channelId !== voiceRecorderChannelId &&
+    voiceState.channelId
   );
 }
 
@@ -798,8 +792,8 @@ function undeafenUser(memberId, voice) {
 }
 
 function moveToInitialVCIfNeeded(usernameAndId, member) {
-  if (member.voice) {
-    member.voice.setChannel(recordingUsersInitialChannel[usernameAndId]);
+  if (member?.voice) {
+    member?.voice.setChannel(recordingUsersInitialChannel[usernameAndId]);
   }
 }
 
@@ -809,11 +803,11 @@ function cancelRecording(interaction, _usernameAndId) {
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
   audioReceiveStream.emit("error");
 
-  if (member.voice) {
+  if (member?.voice) {
     moveToInitialVCIfNeeded(usernameAndId, member);
   }
 
-  const channelTheBotIsIn = connectedVoiceByChannelId[member.voice?.channelId];
+  const channelTheBotIsIn = connectedVoiceByChannelId[member?.voice?.channelId];
   if (channelTheBotIsIn) {
     abortRecordingAndLeaveVoiceChannelIfEmpty(member, channelTheBotIsIn);
   }
@@ -829,12 +823,9 @@ client.on("voiceStateUpdate", (oldState, newState) => {
     !isVoiceDeafened(oldState)
   ) {
     voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
-    newState.member.voice.setDeaf(true);
-  } else if (
-    didMoveOutOfVoiceRecorderChannel(oldState, newState) &&
-    shouldUndeafVoice(oldState)
-  ) {
-    undeafenUser(newState.member.id, oldState.member.voice);
+    newState.setDeaf(true);
+  } else if (shouldUndeafVoice(newState)) {
+    undeafenUser(newState.member.id, newState);
   }
 
   const { hasRecordingUserLeftChannelWithBot, botVoice } =
