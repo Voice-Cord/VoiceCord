@@ -17,7 +17,6 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Events,
 } = require("discord.js");
 const { Transform } = require("stream");
 const { FileWriter } = require("wav");
@@ -35,6 +34,10 @@ const Image = Canvas.Image;
 const path = require("path");
 const request = require("request").defaults({ encoding: null });
 const sharp = require("sharp");
+
+const maxVoiceNoteTimerByUserIds = {};
+
+const recordStartMessageByUsersToRecordOnceEnteringVC = {};
 
 const telemetryFile = "telemetry/info.txt";
 const telemetryTable =
@@ -85,6 +88,7 @@ let usersRequestedButtons = [];
 const audioReceiveStreamByUser = {};
 const connectedVoiceByChannelId = {};
 
+const helpCommand = ".voicecordhelp";
 const recordCommand = ".record";
 const recordAlternativeCommand = ". record";
 
@@ -95,7 +99,7 @@ const recordingUsersInitialChannel = {};
 
 // buttonactions
 const buttonIdsToFunctions = {
-  [recordButtonId]: handleUserRecordStartAction,
+  [recordButtonId]: handleUserRecordStartInteraction,
   [sendButtonId]: tryFinishVoiceNoteOrReplyError,
   [cancelButtonId]: cancelRecording,
 };
@@ -202,10 +206,23 @@ function tryClearExcessMessages(usernameAndId) {
   }
 }
 
-function findVoiceRecorderChannel(guild) {
-  return guild.channels.cache.find(
+const MAX_RECORD_TIME_SECS = 3600;
+
+//TOOD: This is supposed to make some sort of http call and get the max recording time
+function maxRecordingTimeForUserInGuild(_member) {
+  return MAX_RECORD_TIME_SECS;
+}
+
+async function findOrCreateVoiceRecorderChannel(guild) {
+  let foundChannel = await guild?.channels.cache.find(
     (channel) => channel.name === voiceRecorderVoiceChannel
   );
+
+  if (!foundChannel) {
+    foundChannel = await createVoiceRecorderChannel(guild);
+  }
+
+  return foundChannel;
 }
 
 function row(...components) {
@@ -383,7 +400,7 @@ function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
   moveToInitialVCIfNeeded(usernameAndId, interaction.member);
   //TODO only disconnect when is empty
   getVoiceConnection(interaction.guildId).disconnect();
-  audioReceiveStream.emit("finish", interaction);
+  audioReceiveStream.emit("finish_recording", interaction);
 
   delete audioReceiveStreamByUser[usernameAndId];
   delete recordingUsersInitialChannel[usernameAndId];
@@ -405,7 +422,7 @@ function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
 }
 
 async function createAndSendVideo(
-  interaction,
+  interactionOrMessage,
   webpDataUrlContainerObj,
   usernameAndId,
   audioDuration,
@@ -444,9 +461,9 @@ async function createAndSendVideo(
   fs.writeFileSync(files.videofileTemp, Buffer.from(webmBlobArray));
   console.log(
     `✅ Written video ${files.videofileTemp}, in guild: "` +
-      interaction.guild.name +
+      interactionOrMessage.guild.name +
       `", in channel: "` +
-      interaction?.channel?.name +
+      interactionOrMessage?.channel?.name +
       `"`
   );
 
@@ -474,7 +491,7 @@ async function createAndSendVideo(
     );
     console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-    interaction.channel
+    interactionOrMessage.channel
       .send({
         files: [files.videofileFinal],
       })
@@ -580,19 +597,34 @@ function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
   });
 }
 
-function startVoiceNoteRecording(receiver, userId, interaction) {
-  const usernameAndId = findUsernameAndId(userId);
+function tryStopMaxVoiceRecordingTimeIfNeeded(userId) {
+  const timer = maxVoiceNoteTimerByUserIds[userId];
+  if (timer) {
+    clearTimeout(timer);
+    delete maxVoiceNoteTimerByUserIds[userId];
+    return true;
+  } else {
+    return false;
+  }
+}
+
+function startVoiceNoteRecording(
+  receiver,
+  userId,
+  usernameAndId,
+  member,
+  recordStartMessage
+) {
   const files = generateFileNames(usernameAndId);
-  const member = interaction.member;
   const { fileWriter, stopRecordingManually, decodingStream } =
     prepareRecording(files.audiofileTemp);
   const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
 
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
-  //Finish is invoked by our code when voice note send action is made by user
-  audioReceiveStream.on("finish", (interaction) => {
-    fileWriter.end(async () => {
+  //This event gets emitted by us
+  audioReceiveStream.on("finish_recording", (interaction) => {
+    const handleAudio = async () => {
       tryClearExcessMessages(usernameAndId);
 
       const audioDuration = await getAudioDuration(files);
@@ -614,7 +646,8 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
         return;
       }
 
-      interaction.deferUpdate();
+      if (typeof interaction.deferUpdate === "function")
+        interaction.deferUpdate();
 
       generateWebPFromRecording(
         member,
@@ -637,15 +670,38 @@ function startVoiceNoteRecording(receiver, userId, interaction) {
           clearAudioReceiveStream(audioReceiveStream, usernameAndId);
         }
       );
-    });
+    };
+
+    const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
+    if (stoppedTimer) fileWriter.end(handleAudio());
+    else handleAudio();
   });
 
   //This event gets emitted by us
-  audioReceiveStream.on("error", () => {
-    fileWriter.end(() =>
-      abortRecording(files, audioReceiveStream, usernameAndId)
-    );
+  audioReceiveStream.on("abort_recording", (userId) => {
+    const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
+
+    if (stoppedTimer) {
+      fileWriter.end(() =>
+        abortRecording(files, audioReceiveStream, usernameAndId)
+      );
+    } else {
+      abortRecording(files, audioReceiveStream, usernameAndId);
+    }
   });
+
+  const maxRecordTimeSecs = maxRecordingTimeForUserInGuild(member);
+  maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
+    recordStartMessage
+      .reply(
+        `<@${member.id}> You have reached your max recording time of: ${maxRecordTimeSecs} seconds. \n You can still send or cancel.`
+      )
+      .then((message) => markExcessMessage(usernameAndId, message));
+    fileWriter.end();
+
+    clearTimeout(maxVoiceNoteTimerByUserIds[member.id]);
+    delete maxVoiceNoteTimerByUserIds[member.id];
+  }, maxRecordTimeSecs * 1000);
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
@@ -656,6 +712,13 @@ function abortRecording(files, audioReceiveStream, usernameAndId) {
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
 
+function createVoiceRecorderChannel(guild) {
+  return guild.channels.create({
+    name: voiceRecorderVoiceChannel,
+    type: ChannelType.GuildVoice,
+  });
+}
+
 async function generateInviteLinkToVoiceCordChannel(guild) {
   const getInviteLink = async (voiceCordChannel) => {
     const invite = await voiceCordChannel.createInvite();
@@ -663,20 +726,17 @@ async function generateInviteLinkToVoiceCordChannel(guild) {
     return link;
   };
 
-  const voiceRecorderChannel = findVoiceRecorderChannel(guild);
+  const voiceRecorderChannel = await findOrCreateVoiceRecorderChannel(guild);
   if (voiceRecorderChannel) return getInviteLink(voiceRecorderChannel);
   else {
-    const channel = await guild.channels.create({
-      name: voiceRecorderVoiceChannel,
-      type: ChannelType.GuildVoice,
-    });
+    const channel = await createVoiceRecorderChannel(guild);
     return getInviteLink(channel);
   }
 }
 
-function startRecordingUser(interaction, usernameAndId) {
-  const channel = interaction.member?.voice.channel;
-  const userId = interaction.user.id;
+function startRecordingUser(member, usernameAndId, recordStartMessage) {
+  const channel = member?.voice.channel;
+  const memberId = member.id;
 
   const voiceConnection = joinVoiceChannel({
     channelId: channel.id,
@@ -689,16 +749,19 @@ function startRecordingUser(interaction, usernameAndId) {
   connectedVoiceByChannelId[channel.id] = voiceConnection;
 
   const receiver = voiceConnection.receiver;
-  startVoiceNoteRecording(receiver, userId, interaction);
+  startVoiceNoteRecording(
+    receiver,
+    memberId,
+    usernameAndId,
+    member,
+    recordStartMessage
+  );
 
   usersRequestedButtons = [];
   tryClearExcessMessages(usernameAndId);
 
-  interaction.deferReply();
-  interaction.deleteReply();
-
-  interaction.message.edit({
-    content: interaction.member.displayName + " is recording!",
+  recordStartMessage.edit({
+    content: member.displayName + " is recording!",
     components: [
       row(
         registerSendButton(usernameAndId),
@@ -707,18 +770,24 @@ function startRecordingUser(interaction, usernameAndId) {
     ],
   });
 
-  markExcessMessage(usernameAndId, interaction.message);
+  markExcessMessage(usernameAndId, recordStartMessage);
 }
 
-function moveUserToVoiceCordVCIfNeeded(message, usernameAndId) {
-  const voice = message.member?.voice;
-  const recorderChannel = findVoiceRecorderChannel(message.guild);
+async function moveUserToVoiceCordVCIfNeeded(member, usernameAndId) {
+  const voice = member?.voice;
+  const recorderChannel = await findOrCreateVoiceRecorderChannel(member.guild);
   recordingUsersInitialChannel[usernameAndId] = voice.channel;
   if (voice.channelId === recorderChannel.id) return Promise.resolve();
   else return voice.setChannel(recorderChannel);
 }
 
-function handleUserRecordStartAction(interaction, usernameAndId) {
+function moveUserIfNeededAndRecord(member, usernameAndId, recordStartMessage) {
+  moveUserToVoiceCordVCIfNeeded(member, usernameAndId).then(() => {
+    startRecordingUser(member, usernameAndId, recordStartMessage);
+  });
+}
+
+function handleUserRecordStartInteraction(interaction, usernameAndId) {
   if (!interaction.member?.voice?.channel) {
     interaction.reply({
       content: `❌\nYou first have to join the \`${voiceRecorderVoiceChannel}\` VC!\nPro Tip: Use the button that says \`${joinVCButtonLabel}\``,
@@ -735,41 +804,49 @@ function handleUserRecordStartAction(interaction, usernameAndId) {
     console.log(
       `ℹ️ Started recording user: "${usernameAndId}", at: "${currentDateAndTime()}"`
     );
-
-    moveUserToVoiceCordVCIfNeeded(interaction, usernameAndId).then(() => {
-      startRecordingUser(interaction, usernameAndId);
-    });
-
+    
+    interaction.deferReply();
+    interaction.deleteReply();
+    moveUserIfNeededAndRecord(
+      interaction.member,
+      usernameAndId,
+      interaction.message
+    );
     return true;
   }
 }
 
-async function respondRecordCommandWithButtons(message, usernameAndId) {
+async function respondRecordCommand(message, usernameAndId) {
   const channel = message.channel;
-
-  let components;
-  if (message.member?.voice.channel) {
-    components = row(registerRecordButton(usernameAndId));
-  } else {
-    components = row(
-      await createJoinVcButton(message.guild),
-      registerRecordButton(usernameAndId)
-    );
-  }
+  const guild = message.guild;
+  const member = message.member;
 
   message.delete();
 
-  channel.send({
-    content: message.member.displayName + " wants to record!",
-    components: [components],
-  });
+  if (member?.voice.channel) {
+    channel
+      .send(member.displayName + " is recording!")
+      .then((recordStartMessage) => {
+        moveUserIfNeededAndRecord(member, usernameAndId, recordStartMessage);
+      });
+  } else {
+    channel
+      .send({
+        content: member.displayName + " wants to record!",
+        components: [row(await createJoinVcButton(guild))],
+      })
+      .then((recordStartMessage) => {
+        recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId] =
+          recordStartMessage;
+      });
+  }
 }
 
 function ignoreOrRespondToRecordCommand(message) {
   const usernameAndId = findUsernameAndId(message.author.id);
   if (!audioReceiveStreamByUser[usernameAndId]) {
     tryClearExcessMessages(usernameAndId);
-    respondRecordCommandWithButtons(message, usernameAndId);
+    respondRecordCommand(message, usernameAndId);
   }
 }
 
@@ -786,6 +863,8 @@ client.on("messageCreate", (message) => {
     wasOnlyBotMentioned(message)
   ) {
     ignoreOrRespondToRecordCommand(message);
+  } else if (contentLowerCase === helpCommand) {
+    message.reply(`Record by typing \`${recordCommand}\``);
   } else if (message.content.length > 1000 && Math.random() < 0.5) {
     message.reply(
       `Tired of sending long messages? Try VoiceCord by typing \`${recordCommand}\``
@@ -796,7 +875,7 @@ client.on("messageCreate", (message) => {
 client.on("interactionCreate", (interaction) => {
   if (!interaction.isButton()) return;
 
-  const usernameAndId = findUsernameAndId(interaction.user.id);
+  const usernameAndId = findUsernameAndId(interaction.member.id);
   if (interaction.customId.includes(usernameAndId)) {
     const buttonTypeId = interaction.customId.substring(
       usernameAndId.length,
@@ -810,7 +889,7 @@ client.on("interactionCreate", (interaction) => {
     }
   } else {
     interaction.reply({
-      content: "Type `.record` into chat, and try that again!",
+      content: `Type \`${recordCommand}\` into chat, and try that again!`,
       ephemeral: true,
     });
   }
@@ -823,7 +902,7 @@ function abortRecordingAndLeaveVoiceChannelIfEmpty(member, botVoice) {
   tryClearExcessMessages(usernameAndId);
 
   if (audioReceiveStream) {
-    audioReceiveStream.emit("error");
+    audioReceiveStream.emit("abort_recording", member.id);
 
     if (Object.keys(audioReceiveStreamByUser).length === 0) {
       botVoice.disconnect();
@@ -844,16 +923,13 @@ function didRecordingUserLeaveChannelAndNowEmpty(oldState, newState) {
 
 async function didMoveIntoVoiceRecorderChannel(oldState, newState) {
   const voiceRecorderChannelId = (
-    await findVoiceRecorderChannel(newState.guild)
+    await findOrCreateVoiceRecorderChannel(newState.guild)
   )?.id;
-  if (
+
+  return (
     oldState.channelId !== voiceRecorderChannelId &&
     newState.channelId === voiceRecorderChannelId
-  ) {
-    return true;
-  } else {
-    return false;
-  }
+  );
 }
 
 function isVoiceDeafened(voiceState) {
@@ -893,7 +969,7 @@ function cancelRecording(interaction, _usernameAndId) {
   const member = interaction.member;
   const usernameAndId = findUsernameAndId(member.id);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
-  audioReceiveStream.emit("error");
+  audioReceiveStream.emit("abort_recording", interaction.member.id);
 
   if (member?.voice) {
     moveToInitialVCIfNeeded(usernameAndId, member);
@@ -907,21 +983,28 @@ function cancelRecording(interaction, _usernameAndId) {
   return true;
 }
 
-function deafenMember(member) {
-  membersToUndeafOnceLeavingVoiceRecorderChannel.push(member);
-  member?.voice.setDeaf(true);
-}
-
 client.on("voiceStateUpdate", async (oldState, newState) => {
   if (oldState.member.id === client.user.id) return;
 
-  if (
-    (await didMoveIntoVoiceRecorderChannel(oldState, newState)) &&
-    !isVoiceDeafened(oldState)
-  ) {
-    deafenMember(newState.member);
-  } else if (await shouldUndeafVoice(newState)) {
-    undeafenMember(newState.member);
+  if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
+    if (!oldState.deaf) {
+      voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
+      newState.setDeaf(true);
+    }
+
+    const usernameAndId = findUsernameAndId(newState.member.id);
+    const recordStartMessage =
+      recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
+    if (recordStartMessage) {
+      moveUserIfNeededAndRecord(
+        newState.member,
+        usernameAndId,
+        recordStartMessage
+      );
+      delete recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
+    }
+  } else if ((await shouldUndeafVoice(newState)) && oldState.deaf) {
+    undeafenUser(newState.member.id, newState);
   }
 
   const { hasRecordingUserLeftChannelWithBot, botVoice } =
