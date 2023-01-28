@@ -38,7 +38,7 @@ const sharp = require("sharp");
 
 const telemetryFile = "telemetry/info.txt";
 const telemetryTable =
-  "Username and Id | Audio Duration | Guild | Channel | Date | Recording count";
+  "Username and Id | Audio Duration | Guild | Channel | Date | Recording count\n";
 
 const WEBM_FRAME_MAX_LIMIT = 32766;
 
@@ -560,11 +560,11 @@ function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
       }
     }
 
-    const listItem = `\n${usernameAndId} | ${audioDuration}s | ${
+    const listItem = `${usernameAndId} | ${audioDuration}s | ${
       interaction?.guild?.name
     } | ${
       interaction?.channel?.name
-    } | ${currentDateAndTime()} | ${recordingCount}`;
+    } | ${currentDateAndTime()} | ${recordingCount}\n`;
     fs.appendFile(telemetryFile, listItem, function (err) {
       if (err) console.log(err);
     });
