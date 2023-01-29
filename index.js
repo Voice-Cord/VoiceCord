@@ -115,9 +115,9 @@ client.on("ready", async () => {
   await ffmpeg.load();
   console.log("FFmpeg loaded!");
 
-  client.guilds.cache.forEach((guild) => {
+  client?.guilds?.cache.forEach((guild) => {
     const voicecordVC = findVoiceRecorderChannel(guild);
-    voicecordVC.members.forEach((member) => {
+    voicecordVC?.members.forEach((member) => {
       if (!isVoiceDeafened(member?.voice)) {
         deafenMember(member);
       }
