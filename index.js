@@ -75,7 +75,7 @@ const cancelButtonId = "cancel";
 
 const voiceRecorderVoiceChannel = "Voice-Cord";
 
-let voicesToUndeafOnceLeavingVoiceRecorderChannel = [];
+let membersToUndeafOnceLeavingVoiceRecorderChannel = [];
 
 const excessMessagesByUser = [];
 
@@ -114,6 +114,15 @@ client.on("ready", async () => {
   console.log("Bot loaded!");
   await ffmpeg.load();
   console.log("FFmpeg loaded!");
+
+  client.guilds.cache.forEach((guild) => {
+    const voicecordVC = findVoiceRecorderChannel(guild);
+    voicecordVC.members.forEach((member) => {
+      if (!isVoiceDeafened(member?.voice)) {
+        deafenMember(member);
+      }
+    });
+  });
 });
 
 function currentDateAndTime() {
@@ -723,6 +732,10 @@ function handleUserRecordStartAction(interaction, usernameAndId) {
       ephemeral: true,
     });
   } else {
+    console.log(
+      `ℹ️ Started recording user: "${usernameAndId}", at: "${currentDateAndTime()}"`
+    );
+
     moveUserToVoiceCordVCIfNeeded(interaction, usernameAndId).then(() => {
       startRecordingUser(interaction, usernameAndId);
     });
@@ -829,8 +842,10 @@ function didRecordingUserLeaveChannelAndNowEmpty(oldState, newState) {
   return { hasRecordingUserLeftChannelWithBot, botVoice };
 }
 
-function didMoveIntoVoiceRecorderChannel(oldState, newState) {
-  const voiceRecorderChannelId = findVoiceRecorderChannel(newState.guild)?.id;
+async function didMoveIntoVoiceRecorderChannel(oldState, newState) {
+  const voiceRecorderChannelId = (
+    await findVoiceRecorderChannel(newState.guild)
+  )?.id;
   if (
     oldState.channelId !== voiceRecorderChannelId &&
     newState.channelId === voiceRecorderChannelId
@@ -845,22 +860,25 @@ function isVoiceDeafened(voiceState) {
   return voiceState.member?.voice.deaf;
 }
 
-function shouldUndeafVoice(voiceState) {
-  const voiceRecorderChannelId = findVoiceRecorderChannel(voiceState.guild)?.id;
+async function shouldUndeafVoice(voiceState) {
+  const voiceRecorderChannelId = (
+    await findVoiceRecorderChannel(voiceState.guild)
+  )?.id;
 
   return (
-    voicesToUndeafOnceLeavingVoiceRecorderChannel.includes(
-      voiceState.member.id
+    membersToUndeafOnceLeavingVoiceRecorderChannel.find(
+      (member) => member.id === voiceState.member.id
     ) &&
     voiceState.channelId !== voiceRecorderChannelId &&
     voiceState.channelId
   );
 }
 
-function undeafenUser(memberId, voice) {
-  voicesToUndeafOnceLeavingVoiceRecorderChannel =
-    voicesToUndeafOnceLeavingVoiceRecorderChannel.filter(
-      (id) => id !== memberId
+function undeafenMember(member) {
+  const voice = member?.voice;
+  membersToUndeafOnceLeavingVoiceRecorderChannel =
+    membersToUndeafOnceLeavingVoiceRecorderChannel.filter(
+      (mem) => mem.id !== member.id
     );
   voice.setDeaf(false);
 }
@@ -889,17 +907,21 @@ function cancelRecording(interaction, _usernameAndId) {
   return true;
 }
 
-client.on("voiceStateUpdate", (oldState, newState) => {
+function deafenMember(member) {
+  membersToUndeafOnceLeavingVoiceRecorderChannel.push(member);
+  member?.voice.setDeaf(true);
+}
+
+client.on("voiceStateUpdate", async (oldState, newState) => {
   if (oldState.member.id === client.user.id) return;
 
   if (
-    didMoveIntoVoiceRecorderChannel(oldState, newState) &&
+    (await didMoveIntoVoiceRecorderChannel(oldState, newState)) &&
     !isVoiceDeafened(oldState)
   ) {
-    voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
-    newState.setDeaf(true);
-  } else if (shouldUndeafVoice(newState)) {
-    undeafenUser(newState.member.id, newState);
+    deafenMember(newState.member);
+  } else if (await shouldUndeafVoice(newState)) {
+    undeafenMember(newState.member);
   }
 
   const { hasRecordingUserLeftChannelWithBot, botVoice } =
@@ -910,6 +932,13 @@ client.on("voiceStateUpdate", (oldState, newState) => {
   if (hasRecordingUserLeftChannelWithBot) {
     abortRecordingAndLeaveVoiceChannelIfEmpty(oldState.member, botVoice);
   }
+});
+
+//Called when stopping PM2 linux *ONLY*, or node.js (NOT NODEMON)
+process.on(`SIGINT`, () => {
+  membersToUndeafOnceLeavingVoiceRecorderChannel.forEach((member) => {
+    undeafenMember(member);
+  });
 });
 
 client.login(process.env.TOKEN);
