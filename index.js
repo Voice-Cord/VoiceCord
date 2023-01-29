@@ -117,7 +117,7 @@ client.on("ready", async () => {
 
   client?.guilds?.cache.forEach((guild) => {
     const voicecordVC = findVoiceRecorderChannel(guild);
-    voicecordVC?.members.forEach((member) => {
+    voicecordVC?.members?.forEach((member) => {
       if (!isVoiceDeafened(member?.voice)) {
         deafenMember(member);
       }
