@@ -400,7 +400,7 @@ function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
   moveToInitialVCIfNeeded(usernameAndId, interaction.member);
   //TODO only disconnect when is empty
   getVoiceConnection(interaction.guildId).disconnect();
-  audioReceiveStream.emit("finish_recording", interaction);
+  // audioReceiveStream.emit("finish_recording", interaction);
 
   delete audioReceiveStreamByUser[usernameAndId];
   delete recordingUsersInitialChannel[usernameAndId];
@@ -895,7 +895,13 @@ client.on("interactionCreate", (interaction) => {
   }
 });
 
-function abortRecordingAndLeaveVoiceChannelIfEmpty(member, botVoice) {
+function leaveVoiceChannelIfNotRecording() {
+  if (Object.keys(audioReceiveStreamByUser).length === 0) {
+    client?.voice.disconnect();
+  }
+}
+
+function abortRecordingAndLeaveVoiceChannelIfNotRecording(member, botVoice) {
   const usernameAndId = findUsernameAndId(member.id);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
@@ -904,9 +910,7 @@ function abortRecordingAndLeaveVoiceChannelIfEmpty(member, botVoice) {
   if (audioReceiveStream) {
     audioReceiveStream.emit("abort_recording", member.id);
 
-    if (Object.keys(audioReceiveStreamByUser).length === 0) {
-      botVoice.disconnect();
-    }
+    leaveVoiceChannelIfNotRecording(botVoice);
   }
 }
 
@@ -977,7 +981,8 @@ function cancelRecording(interaction, _usernameAndId) {
 
   const channelTheBotIsIn = connectedVoiceByChannelId[member?.voice?.channelId];
   if (channelTheBotIsIn) {
-    abortRecordingAndLeaveVoiceChannelIfEmpty(member, channelTheBotIsIn);
+    tryClearExcessMessages(usernameAndId);
+    leaveVoiceChannelIfNotRecording();
   }
 
   return true;
@@ -1017,7 +1022,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
   //TODO also abort recording, if user left and there are still some left
   //Because we want to stop a recording of a user, even if others are recording
   if (hasRecordingUserLeftChannelWithBot) {
-    abortRecordingAndLeaveVoiceChannelIfEmpty(oldState.member, botVoice);
+    abortRecordingAndLeaveVoiceChannelIfNotRecording(oldState.member, botVoice);
   }
 });
 
