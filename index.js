@@ -989,14 +989,16 @@ function cancelRecording(interaction, _usernameAndId) {
 }
 
 function deafenMember(member) {
-  membersToUndeafOnceLeavingVoiceRecorderChannel.push(member.id);
+  membersToUndeafOnceLeavingVoiceRecorderChannel.push(member);
   member?.voice.setDeaf(true);
 }
 
 client.on("voiceStateUpdate", async (oldState, newState) => {
   if (oldState.member.id === client.user.id) return;
 
-  if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
+  if ((await shouldUndeafVoice(newState)) && oldState.deaf) {
+    undeafenMember(newState.member);
+  } else if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
     if (!oldState.deaf) {
       deafenMember(newState.member);
     }
@@ -1012,8 +1014,6 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       );
       delete recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
     }
-  } else if ((await shouldUndeafVoice(newState)) && oldState.deaf) {
-    undeafenUser(newState.member.id, newState);
   }
 
   const { hasRecordingUserLeftChannelWithBot, botVoice } =
