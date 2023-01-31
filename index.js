@@ -400,7 +400,7 @@ function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
   moveToInitialVCIfNeeded(usernameAndId, interaction.member);
   //TODO only disconnect when is empty
   getVoiceConnection(interaction.guildId).disconnect();
-  // audioReceiveStream.emit("finish_recording", interaction);
+  audioReceiveStream.emit("finish_recording", interaction);
 
   delete audioReceiveStreamByUser[usernameAndId];
   delete recordingUsersInitialChannel[usernameAndId];
