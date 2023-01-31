@@ -673,7 +673,7 @@ function startVoiceNoteRecording(
     };
 
     const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
-    if (stoppedTimer) fileWriter.end(handleAudio());
+    if (stoppedTimer) fileWriter.end(handleAudio);
     else handleAudio();
   });
 
@@ -782,6 +782,10 @@ async function moveUserToVoiceCordVCIfNeeded(member, usernameAndId) {
 }
 
 function moveUserIfNeededAndRecord(member, usernameAndId, recordStartMessage) {
+  console.log(
+    `ℹ️ Started recording user: "${usernameAndId}", at: "${currentDateAndTime()}"`
+  );
+
   moveUserToVoiceCordVCIfNeeded(member, usernameAndId).then(() => {
     startRecordingUser(member, usernameAndId, recordStartMessage);
   });
@@ -801,10 +805,6 @@ function handleUserRecordStartInteraction(interaction, usernameAndId) {
       ephemeral: true,
     });
   } else {
-    console.log(
-      `ℹ️ Started recording user: "${usernameAndId}", at: "${currentDateAndTime()}"`
-    );
-    
     interaction.deferReply();
     interaction.deleteReply();
     moveUserIfNeededAndRecord(
