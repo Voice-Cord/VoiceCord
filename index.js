@@ -119,8 +119,8 @@ client.on("ready", async () => {
   await ffmpeg.load();
   console.log("FFmpeg loaded!");
 
-  client?.guilds?.cache.forEach((guild) => {
-    const voicecordVC = findVoiceRecorderChannel(guild);
+  client?.guilds?.cache.forEach(async (guild) => {
+    const voicecordVC = await findOrCreateVoiceRecorderChannel(guild);
     voicecordVC?.members?.forEach((member) => {
       if (!isVoiceDeafened(member?.voice)) {
         deafenMember(member);
@@ -938,7 +938,7 @@ function isVoiceDeafened(voiceState) {
 
 async function shouldUndeafVoice(voiceState) {
   const voiceRecorderChannelId = (
-    await findVoiceRecorderChannel(voiceState.guild)
+    await findOrCreateVoiceRecorderChannel(voiceState.guild)
   )?.id;
 
   return (
@@ -983,13 +983,17 @@ function cancelRecording(interaction, _usernameAndId) {
   return true;
 }
 
+function deafenMember(member) {
+  membersToUndeafOnceLeavingVoiceRecorderChannel.push(member.id);
+  member?.voice.setDeaf(true);
+}
+
 client.on("voiceStateUpdate", async (oldState, newState) => {
   if (oldState.member.id === client.user.id) return;
 
   if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
     if (!oldState.deaf) {
-      voicesToUndeafOnceLeavingVoiceRecorderChannel.push(newState.member.id);
-      newState.setDeaf(true);
+      deafenMember(newState.member);
     }
 
     const usernameAndId = findUsernameAndId(newState.member.id);
