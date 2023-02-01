@@ -819,15 +819,17 @@ async function generateInviteLinkToVoiceCordChannel(guild) {
 }
 
 function editRecordingStartMessageToRecording(message, name, usernameAndId) {
+  const buttons = [
+    registerSendButton(usernameAndId),
+    registerCancelButton(usernameAndId),
+  ];
+
+  if (!message.channel.isThread())
+    buttons.push(registerCreateThreadButton(usernameAndId));
+
   message.edit({
     content: name + " is recording!",
-    components: [
-      row(
-        registerSendButton(usernameAndId),
-        registerCancelButton(usernameAndId),
-        registerCreateThreadButton(usernameAndId)
-      ),
-    ],
+    components: [row(...buttons)],
   });
 }
 
@@ -947,15 +949,15 @@ async function respondRecordCommand(message, usernameAndId) {
         );
       });
   } else {
+    const buttons = [await createJoinVcButton(guild)];
+
+    if (!message.channel.isThread())
+      buttons.push(registerCreateThreadButton(usernameAndId));
+
     channel
       .send({
         content: member.displayName + " wants to record!",
-        components: [
-          row(
-            await createJoinVcButton(guild),
-            registerCreateThreadButton(usernameAndId)
-          ),
-        ],
+        components: [row(buttons)],
       })
       .then((recordStartMessage) => {
         recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId] =
