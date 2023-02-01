@@ -83,6 +83,7 @@ const sendButtonId = "send";
 const cancelButtonId = "cancel";
 
 const voiceRecorderVoiceChannel = "Voice-Cord";
+const threadName = "Voice-Cord";
 
 let membersToUndeafOnceLeavingVoiceRecorderChannel = [];
 
@@ -534,13 +535,21 @@ async function createAndSendVideo(
     );
     console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-    interactionOrMessage.channel
+    let channel;
+
+    if (interactionOrMessage.channel.isThread()) {
+      channel = interactionOrMessage.channel.parent;
+    } else {
+      channel = interactionOrMessage.channel;
+      tryClearExcessMessages(usernameAndId);
+    }
+
+    channel
       .send({
         files: [files.videofileFinal],
       })
       .then(() => {
         console.log(`✅ Sent video ${files.videofileFinal}`);
-        tryClearExcessMessages(usernameAndId);
         sendCallback();
       });
   };
@@ -668,8 +677,6 @@ function startVoiceNoteRecording(
   //This event gets emitted by us
   audioReceiveStream.on("finish_recording", (interaction) => {
     const handleAudio = async () => {
-      tryClearExcessMessages(usernameAndId);
-
       const audioDuration = await getAudioDuration(files);
       console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
@@ -685,6 +692,8 @@ function startVoiceNoteRecording(
           ephemeral: true,
         });
         abortRecording(files, audioReceiveStream, usernameAndId);
+
+        tryClearExcessMessages(usernameAndId);
 
         return;
       }
@@ -777,6 +786,18 @@ async function generateInviteLinkToVoiceCordChannel(guild) {
   }
 }
 
+function editRecordingStartMessageToRecording(message, name, usernameAndId) {
+  message.edit({
+    content: name + " is recording!",
+    components: [
+      row(
+        registerSendButton(usernameAndId),
+        registerCancelButton(usernameAndId)
+      ),
+    ],
+  });
+}
+
 function startRecordingUser(member, usernameAndId, recordStartMessage) {
   const channel = member?.voice.channel;
   const memberId = member.id;
@@ -803,17 +824,15 @@ function startRecordingUser(member, usernameAndId, recordStartMessage) {
   usersRequestedButtons = [];
   tryClearExcessMessages(usernameAndId);
 
-  recordStartMessage.edit({
-    content: member.displayName + " is recording!",
-    components: [
-      row(
-        registerSendButton(usernameAndId),
-        registerCancelButton(usernameAndId)
-      ),
-    ],
-  });
+  if (!recordStartMessage.channel.isThread()) {
+    editRecordingStartMessageToRecording(
+      recordStartMessage,
+      member.displayName,
+      usernameAndId
+    );
 
-  markExcessMessage(usernameAndId, recordStartMessage);
+    markExcessMessage(usernameAndId, recordStartMessage);
+  }
 }
 
 async function moveUserToVoiceCordVCIfNeeded(member, usernameAndId) {
@@ -847,6 +866,11 @@ function handleUserRecordStartInteraction(interaction, usernameAndId) {
       content: "❌ You have to unmute yourself first!",
       ephemeral: true,
     });
+  } else if (audioReceiveStreamByUser[usernameAndId]) {
+    interaction.reply({
+      content: "❌ You are already recording!",
+      ephemeral: true,
+    });
   } else {
     interaction.deferReply();
     interaction.deleteReply();
@@ -866,11 +890,31 @@ async function respondRecordCommand(message, usernameAndId) {
 
   message.delete();
 
+  const createThread = async (recordStartMessage, ...extraButtons) => {
+    const thread = await recordStartMessage.startThread({
+      name: threadName,
+    });
+
+    thread.send({
+      content: "Use this thread to send multiple voice notes!",
+      components: [
+        row(
+          ...extraButtons,
+          registerRecordButton(usernameAndId),
+          registerSendButton(usernameAndId),
+          registerCancelButton(usernameAndId)
+        ),
+      ],
+    });
+    // .then(() => thread.setArchived(true));
+  };
+
   if (member?.voice.channel) {
     channel
       .send(member.displayName + " is recording!")
       .then((recordStartMessage) => {
         moveUserIfNeededAndRecord(member, usernameAndId, recordStartMessage);
+        createThread(recordStartMessage);
       });
   } else {
     channel
@@ -878,9 +922,11 @@ async function respondRecordCommand(message, usernameAndId) {
         content: member.displayName + " wants to record!",
         components: [row(await createJoinVcButton(guild))],
       })
-      .then((recordStartMessage) => {
+      .then(async (recordStartMessage) => {
         recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId] =
           recordStartMessage;
+
+        createThread(recordStartMessage, await createJoinVcButton(guild));
       });
   }
 }
@@ -1037,7 +1083,7 @@ function deafenMember(member) {
 }
 
 client.on("voiceStateUpdate", async (oldState, newState) => {
-  if (oldState.member.id === client.user.id) return;
+  if (newState.member.id === client.user.id) return;
 
   if ((await shouldUndeafVoice(newState)) && oldState.deaf) {
     undeafenMember(newState.member);
