@@ -77,10 +77,15 @@ const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
 const joinVCButtonLabel = "🔊 Join VC to record";
+const recordButtonLabel = "🎙️ Record";
+const sendButtonLabel = "📨 Send";
+const createThreadButtonLabel = "🔄 Create Thread";
+const cancelButtonLabel = "❌ Cancel";
 
 const recordButtonId = "record";
 const sendButtonId = "send";
 const cancelButtonId = "cancel";
+const createThreadButtonId = "create-thread";
 
 const voiceRecorderVoiceChannel = "Voice-Cord";
 const threadName = "Voice-Cord";
@@ -109,6 +114,7 @@ const buttonIdsToFunctions = {
   [recordButtonId]: handleUserRecordStartInteraction,
   [sendButtonId]: tryFinishVoiceNoteOrReplyError,
   [cancelButtonId]: cancelRecording,
+  [createThreadButtonId]: createThread,
 };
 
 const client = new Client({
@@ -229,6 +235,18 @@ function markExcessMessage(usernameAndId, message) {
   }
 }
 
+async function removeButtonFromMessage(message, buttonId) {
+  const buttonRow = [];
+
+  message?.components?.forEach((actionRow) => {
+    actionRow?.components?.forEach((button) => {
+      if (button.data.custom_id !== buttonId) buttonRow.push(button);
+    });
+  });
+
+  message.edit({ components: [row(buttonRow)] });
+}
+
 function tryClearExcessMessages(usernameAndId) {
   const messages = excessMessagesByUser[usernameAndId];
   if (messages) {
@@ -236,10 +254,14 @@ function tryClearExcessMessages(usernameAndId) {
       message.components?.forEach((actionRow) => {
         actionRow.components?.forEach((button) => {
           if (
-            button.custom_id !== undefined &&
+            button.data.custom_id !== undefined &&
             button.style !== ButtonStyle.Link
-          )
-            usersRequestedButtons.pop(usernameAndId + button.custom_id);
+          ) {
+            const index = usersRequestedButtons.indexOf(
+              usernameAndId + button.data.custom_id
+            );
+            usersRequestedButtons.slice(index, 1);
+          }
         });
       });
 
@@ -291,7 +313,16 @@ function registerCancelButton(usernameAndId) {
 
   return new ButtonBuilder()
     .setCustomId(usernameAndId + cancelButtonId)
-    .setLabel("❌ Cancel")
+    .setLabel(cancelButtonLabel)
+    .setStyle(ButtonStyle.Secondary);
+}
+
+function registerCreateThreadButton(usernameAndId) {
+  registerButton(usernameAndId, createThreadButtonId);
+
+  return new ButtonBuilder()
+    .setCustomId(usernameAndId + createThreadButtonId)
+    .setLabel(createThreadButtonLabel)
     .setStyle(ButtonStyle.Secondary);
 }
 
@@ -300,7 +331,7 @@ function registerSendButton(usernameAndId) {
 
   return new ButtonBuilder()
     .setCustomId(usernameAndId + sendButtonId)
-    .setLabel("📨 Send")
+    .setLabel(sendButtonLabel)
     .setStyle(ButtonStyle.Success);
 }
 
@@ -309,7 +340,7 @@ function registerRecordButton(usernameAndId) {
 
   return new ButtonBuilder()
     .setCustomId(usernameAndId + recordButtonId)
-    .setLabel("🎙️ Record")
+    .setLabel(recordButtonLabel)
     .setStyle(ButtonStyle.Danger);
 }
 
@@ -455,7 +486,7 @@ function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
 
   if (!audioReceiveStream) {
     interaction.reply({
-      content: "❌ You have to record first! 🎙️",
+      content: `❌ Record with \`${recordButtonLabel}\` before sending! 🎙️`,
       ephemeral: true,
     });
     return false;
@@ -570,8 +601,8 @@ async function createAndSendVideo(
 }
 
 function generateFileNames(username) {
-  const date = currentTimeFormatted().replace(" ", "_");
-  const filename = `recordings/${date}__${username}`;
+  const date = currentTimeFormatted();
+  const filename = `recordings/${date}_${username}`;
   const webpfileTemp = `frames/${username}`;
   const audiofileTemp = filename + `.wav`;
   const videofileTemp = filename + `_t.webm`;
@@ -682,10 +713,10 @@ function startVoiceNoteRecording(
 
       if (audioDuration < 0.01) {
         console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
+
         let reply;
-        if (interaction.member.voice.selfMute)
-          reply = "You need to unmute yourself!";
-        else reply = "You have to say something, to send a voice note!";
+        if (interaction.member.voice.selfMute) reply = "Unmute yourself first!";
+        else reply = "Say something, to send it!";
 
         interaction.reply({
           content: reply,
@@ -725,8 +756,9 @@ function startVoiceNoteRecording(
     };
 
     const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
-    if (stoppedTimer) fileWriter.end(handleAudio);
-    else handleAudio();
+    if (stoppedTimer) {
+      fileWriter.end(() => handleAudio());
+    } else handleAudio();
   });
 
   //This event gets emitted by us
@@ -792,13 +824,19 @@ function editRecordingStartMessageToRecording(message, name, usernameAndId) {
     components: [
       row(
         registerSendButton(usernameAndId),
-        registerCancelButton(usernameAndId)
+        registerCancelButton(usernameAndId),
+        registerCreateThreadButton(usernameAndId)
       ),
     ],
   });
 }
 
-function startRecordingUser(member, usernameAndId, recordStartMessage) {
+function startRecordingUser(
+  member,
+  usernameAndId,
+  recordStartMessage,
+  isThread
+) {
   const channel = member?.voice.channel;
   const memberId = member.id;
 
@@ -824,7 +862,7 @@ function startRecordingUser(member, usernameAndId, recordStartMessage) {
   usersRequestedButtons = [];
   tryClearExcessMessages(usernameAndId);
 
-  if (!recordStartMessage.channel.isThread()) {
+  if (!isThread) {
     editRecordingStartMessageToRecording(
       recordStartMessage,
       member.displayName,
@@ -843,27 +881,32 @@ async function moveUserToVoiceCordVCIfNeeded(member, usernameAndId) {
   else return voice.setChannel(recorderChannel);
 }
 
-function moveUserIfNeededAndRecord(member, usernameAndId, recordStartMessage) {
+function moveUserIfNeededAndRecord(
+  member,
+  usernameAndId,
+  recordStartMessage,
+  isThread
+) {
   console.log(
     `ℹ️ Started recording user: "${usernameAndId}", at: "${currentDateAndTime()}"`
   );
 
   moveUserToVoiceCordVCIfNeeded(member, usernameAndId).then(() => {
-    startRecordingUser(member, usernameAndId, recordStartMessage);
+    startRecordingUser(member, usernameAndId, recordStartMessage, isThread);
   });
 }
 
 function handleUserRecordStartInteraction(interaction, usernameAndId) {
   if (!interaction.member?.voice?.channel) {
     interaction.reply({
-      content: `❌\nYou first have to join the \`${voiceRecorderVoiceChannel}\` VC!\nPro Tip: Use the button that says \`${joinVCButtonLabel}\``,
+      content: `❌\n Join \`${voiceRecorderVoiceChannel}\` VC first!\nTip: Use the \`${joinVCButtonLabel}\` button`,
       ephemeral: true,
     });
 
     return false;
   } else if (interaction.member?.voice?.selfMute) {
     interaction.reply({
-      content: "❌ You have to unmute yourself first!",
+      content: "❌ Unmute yourself first!",
       ephemeral: true,
     });
   } else if (audioReceiveStreamByUser[usernameAndId]) {
@@ -874,10 +917,12 @@ function handleUserRecordStartInteraction(interaction, usernameAndId) {
   } else {
     interaction.deferReply();
     interaction.deleteReply();
+
     moveUserIfNeededAndRecord(
       interaction.member,
       usernameAndId,
-      interaction.message
+      interaction.message,
+      interaction.message.channel.isThread()
     );
     return true;
   }
@@ -890,43 +935,31 @@ async function respondRecordCommand(message, usernameAndId) {
 
   message.delete();
 
-  const createThread = async (recordStartMessage, ...extraButtons) => {
-    const thread = await recordStartMessage.startThread({
-      name: threadName,
-    });
-
-    thread.send({
-      content: "Use this thread to send multiple voice notes!",
-      components: [
-        row(
-          ...extraButtons,
-          registerRecordButton(usernameAndId),
-          registerSendButton(usernameAndId),
-          registerCancelButton(usernameAndId)
-        ),
-      ],
-    });
-    // .then(() => thread.setArchived(true));
-  };
-
   if (member?.voice.channel) {
     channel
       .send(member.displayName + " is recording!")
       .then((recordStartMessage) => {
-        moveUserIfNeededAndRecord(member, usernameAndId, recordStartMessage);
-        createThread(recordStartMessage);
+        moveUserIfNeededAndRecord(
+          member,
+          usernameAndId,
+          recordStartMessage,
+          false
+        );
       });
   } else {
     channel
       .send({
         content: member.displayName + " wants to record!",
-        components: [row(await createJoinVcButton(guild))],
+        components: [
+          row(
+            await createJoinVcButton(guild),
+            registerCreateThreadButton(usernameAndId)
+          ),
+        ],
       })
-      .then(async (recordStartMessage) => {
+      .then((recordStartMessage) => {
         recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId] =
           recordStartMessage;
-
-        createThread(recordStartMessage, await createJoinVcButton(guild));
       });
   }
 }
@@ -978,7 +1011,7 @@ client.on("interactionCreate", (interaction) => {
     }
   } else {
     interaction.reply({
-      content: `Type \`${recordCommand}\` into chat, and try that again!`,
+      content: `Type \`${recordCommand}\`, and try again!`,
       ephemeral: true,
     });
   }
@@ -1058,10 +1091,49 @@ function moveToInitialVCIfNeeded(usernameAndId, member) {
   }
 }
 
+async function createThread(interaction, usernameAndId) {
+  interaction.message.edit({
+    components: [],
+  });
+
+  const thread = await interaction.message.startThread({
+    name: threadName,
+  });
+
+  const buttons = [
+    registerRecordButton(usernameAndId),
+    registerSendButton(usernameAndId),
+    registerCancelButton(usernameAndId),
+  ];
+
+  if (!interaction.member?.voice?.channel) {
+    buttons.splice(0, 0, await createJoinVcButton(interaction.guild));
+  }
+
+  thread.send({
+    content: "Record multiple voice notes here!",
+    components: [row(buttons)],
+  });
+  //TODO: archive the newly created thread
+  // .then(() => thread.setArchived(true));
+}
+
 function cancelRecording(interaction, _usernameAndId) {
   const member = interaction.member;
   const usernameAndId = findUsernameAndId(member.id);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
+
+  if (!audioReceiveStream) {
+    interaction.reply({
+      content: "Cannot cancel when not recording",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  interaction.deferReply();
+  interaction.deleteReply();
+
   audioReceiveStream.emit("abort_recording", interaction.member.id);
 
   if (member?.voice) {
@@ -1099,7 +1171,8 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
       moveUserIfNeededAndRecord(
         newState.member,
         usernameAndId,
-        recordStartMessage
+        recordStartMessage,
+        recordStartMessage.hasThread
       );
       delete recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
     }
