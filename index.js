@@ -137,14 +137,21 @@ function leaveGuildIfNotAdmin(guild) {
       );
     }
 
-    console.log(`Left Guild: ${guild.name}, because of no admin permissions.`);
+    console.log(
+      `Left Guild: ${
+        guild.name
+      }, at: ${currentDateAndTime()}, because of no admin permissions.`
+    );
 
     guild.leave();
+    return true;
   }
+  return false;
 }
 
 client.on("guildCreate", (guild) => {
-  leaveGuildIfNotAdmin(guild);
+  if (!leaveGuildIfNotAdmin(guild));
+  console.log(`Added to Guild: ${guild.name}, at: ${currentDateAndTime()}`);
 });
 
 client.on("ready", async () => {
