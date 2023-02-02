@@ -17,6 +17,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  PermissionsBitField,
+  BitField,
 } = require("discord.js");
 const { Transform } = require("stream");
 const { FileWriter } = require("wav");
@@ -67,6 +69,10 @@ function secToHHMMSS(seconds) {
   return new Date(seconds * 1000).toISOString().slice(11, 19);
 }
 
+const email = "voicecordhelp@gmail.com";
+const adminInviteLink =
+  "https://discord.com/api/oauth2/authorize?client_id=1068674033832427540&permissions=8&scope=bot%20applications.commands";
+
 const voiceRecorderDisplayName = "VoiceCord";
 const voiceRecorderBy = "Recorded on Discord by " + voiceRecorderDisplayName;
 
@@ -114,12 +120,42 @@ const client = new Client({
   ],
 });
 
+function leaveGuildIfNotAdmin(guild) {
+  if (
+    !guild.members.me.permissions.has(PermissionsBitField.Flags.Administrator)
+  ) {
+    const channel = guild.channels.cache.find(
+      (channel) =>
+        channel.isTextBased() &&
+        channel
+          .permissionsFor(client.user.id)
+          .has(PermissionsBitField.Flags.SendMessages)
+    );
+    if (channel) {
+      channel.send(
+        `I have no admin rights. Use this link: ${adminInviteLink}, or contact us: \`${email}\``
+      );
+    }
+
+    console.log(`Left Guild: ${guild.name}, because of no admin permissions.`);
+
+    guild.leave();
+  }
+}
+
+client.on("guildCreate", (guild) => {
+  leaveGuildIfNotAdmin(guild);
+});
+
 client.on("ready", async () => {
   console.log("Bot loaded!");
+
   await ffmpeg.load();
   console.log("FFmpeg loaded!");
 
   client?.guilds?.cache.forEach(async (guild) => {
+    leaveGuildIfNotAdmin(guild);
+
     const voicecordVC = await findOrCreateVoiceRecorderChannel(guild);
     voicecordVC?.members?.forEach((member) => {
       if (!isVoiceDeafened(member?.voice)) {
