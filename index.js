@@ -1098,8 +1098,14 @@ async function createThread(interaction, usernameAndId) {
     components: [],
   });
 
+  const newThreadName =
+    threadName + ` ${findUsernameAndId(interaction.user.id)}`;
+  interaction.channel?.threads?.cache
+    ?.find((thread) => thread.name === newThreadName)
+    ?.delete();
+
   const thread = await interaction.message.startThread({
-    name: threadName,
+    name: newThreadName,
   });
 
   const buttons = [
