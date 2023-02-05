@@ -38,6 +38,9 @@ const request = require("request").defaults({ encoding: null });
 const sharp = require("sharp");
 
 const maxVoiceNoteTimerByUserIds = {};
+const createThreadTimeoutTimerByGuildIdAndUserIds = {};
+
+const createThreadTimeoutMs = 20000;
 
 const recordStartMessageByUsersToRecordOnceEnteringVC = {};
 
@@ -1094,12 +1097,27 @@ function moveToInitialVCIfNeeded(usernameAndId, member) {
 }
 
 async function createThread(interaction, usernameAndId) {
+  const guildAndUserId = interaction.guild.id + interaction.user.id;
+  if (createThreadTimeoutTimerByGuildIdAndUserIds[guildAndUserId]) {
+    interaction.reply({
+      content: "Hold on there partner! Creating threads too fast ⚡️🏃🏻💨 kek",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  createThreadTimeoutTimerByGuildIdAndUserIds[guildAndUserId] = setTimeout(
+    () => {
+      delete createThreadTimeoutTimerByGuildIdAndUserIds[guildAndUserId];
+    },
+    createThreadTimeoutMs
+  );
+
   interaction.message.edit({
     components: [],
   });
 
-  const newThreadName =
-    threadName + ` ${findUsernameAndId(interaction.user.id)}`;
+  const newThreadName = threadName + ` ${usernameAndId}`;
   interaction.channel?.threads?.cache
     ?.find((thread) => thread.name === newThreadName)
     ?.delete();
