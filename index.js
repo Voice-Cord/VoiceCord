@@ -702,27 +702,27 @@ function startVoiceNoteRecording(
       if (typeof interaction.deferUpdate === "function")
         interaction.deferUpdate();
 
-      // generateWebPFromRecording(
-      //   member,
-      //   files,
-      //   audioDuration,
-      //   (webpDataUrlContainerObj) => {
-      //     createAndSendVideo(
-      //       interaction,
-      //       webpDataUrlContainerObj,
-      //       usernameAndId,
-      //       audioDuration,
-      //       files,
-      //       () => cleanupFiles(files)
-      //     );
+      generateWebPFromRecording(
+        member,
+        files,
+        audioDuration,
+        (webpDataUrlContainerObj) => {
+          createAndSendVideo(
+            interaction,
+            webpDataUrlContainerObj,
+            usernameAndId,
+            audioDuration,
+            files,
+            () => cleanupFiles(files)
+          );
 
-      //     recordingCount += 1;
-      //     console.log("ℹ️ Recordings sent: " + recordingCount);
-      //     appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
+          recordingCount += 1;
+          console.log("ℹ️ Recordings sent: " + recordingCount);
+          appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
 
-      //     clearAudioReceiveStream(audioReceiveStream, usernameAndId);
-      //   }
-      // );
+          clearAudioReceiveStream(audioReceiveStream, usernameAndId);
+        }
+      );
     };
 
     const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
