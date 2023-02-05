@@ -22,20 +22,21 @@ const {
 } = require("discord.js");
 const { Transform } = require("stream");
 const { FileWriter } = require("wav");
-const { createFFmpeg, fetchFile } = require("@ffmpeg/ffmpeg");
 const wavAudioDuration = require("wav-audio-length").default;
 
 const opus = require("@discordjs/opus");
 const { OpusEncoder } = opus;
 
 const fs = require("fs");
-const ffmpeg = createFFmpeg({});
 const Whammy = require("./whammy");
 const Canvas = require("@napi-rs/canvas");
 const Image = Canvas.Image;
 const path = require("path");
 const request = require("request").defaults({ encoding: null });
 const sharp = require("sharp");
+const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
+const ffmpeg = require("fluent-ffmpeg");
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const maxVoiceNoteTimerByUserIds = {};
 const createThreadTimeoutTimerByGuildIdAndUserIds = {};
@@ -107,8 +108,6 @@ const helpCommand = ".voicecordhelp";
 const recordCommand = ".record";
 const recordAlternativeCommand = ". record";
 
-const ffmpegJobs = [];
-
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel = {};
 
@@ -164,11 +163,8 @@ client.on("guildCreate", (guild) => {
   console.log(`Added to Guild: ${guild.name}, at: ${currentDateAndTime()}`);
 });
 
-client.on("ready", async () => {
+client.on("ready", () => {
   console.log("Bot loaded!");
-
-  await ffmpeg.load();
-  console.log("FFmpeg loaded!");
 
   client?.guilds?.cache.forEach(async (guild) => {
     leaveGuildIfNotAdmin(guild);
@@ -545,62 +541,33 @@ async function createAndSendVideo(
       `"`
   );
 
-  const combineAudioVideoAndSend = async () => {
-    ffmpeg.FS(
-      "writeFile",
-      "video_t.webm",
-      await fetchFile(files.videofileTemp)
-    );
-    ffmpeg.FS("writeFile", "audio.wav", await fetchFile(files.audiofileTemp));
-    await ffmpeg.run(
-      "-i",
-      "video_t.webm",
-      "-i",
-      "audio.wav",
-      "-c:v",
-      "libx264",
-      "-c:a",
-      "aac",
-      "video.mp4"
-    );
-    await fs.promises.writeFile(
-      files.videofileFinal,
-      ffmpeg.FS("readFile", "video.mp4")
-    );
-    console.log(`✅ Combined video and audio ${files.videofileFinal}`);
+  ffmpeg()
+    .addInput(files.videofileTemp)
+    .addInput(files.audiofileTemp)
+    .output(files.videofileFinal)
+    .outputOptions(["-c:v libx264", "-c:a aac"])
+    .on("end", () => {
+      console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-    let channel;
+      let channel;
 
-    if (interactionOrMessage.channel.isThread()) {
-      channel = interactionOrMessage.channel.parent;
-    } else {
-      channel = interactionOrMessage.channel;
-      tryClearExcessMessages(usernameAndId);
-    }
+      if (interactionOrMessage.channel.isThread()) {
+        channel = interactionOrMessage.channel.parent;
+      } else {
+        channel = interactionOrMessage.channel;
+        tryClearExcessMessages(usernameAndId);
+      }
 
-    channel
-      .send({
-        files: [files.videofileFinal],
-      })
-      .then(() => {
-        console.log(`✅ Sent video ${files.videofileFinal}`);
-        sendCallback();
-      });
-  };
-
-  ffmpegJobs.push(combineAudioVideoAndSend);
-
-  if (ffmpegJobs.length === 1) {
-    await ffmpegJobs[0]();
-
-    // If there has been another ffmpeg request in the meantime, execute them.
-    while (ffmpegJobs.length > 1) {
-      const job = ffmpegJobs.pop();
-      job();
-    }
-
-    ffmpegJobs.pop();
-  }
+      channel
+        .send({
+          files: [files.videofileFinal],
+        })
+        .then(() => {
+          console.log(`✅ Sent video ${files.videofileFinal}`);
+          sendCallback();
+        });
+    })
+    .run();
 }
 
 function generateFileNames(username) {
@@ -735,27 +702,27 @@ function startVoiceNoteRecording(
       if (typeof interaction.deferUpdate === "function")
         interaction.deferUpdate();
 
-      generateWebPFromRecording(
-        member,
-        files,
-        audioDuration,
-        (webpDataUrlContainerObj) => {
-          createAndSendVideo(
-            interaction,
-            webpDataUrlContainerObj,
-            usernameAndId,
-            audioDuration,
-            files,
-            () => cleanupFiles(files)
-          );
+      // generateWebPFromRecording(
+      //   member,
+      //   files,
+      //   audioDuration,
+      //   (webpDataUrlContainerObj) => {
+      //     createAndSendVideo(
+      //       interaction,
+      //       webpDataUrlContainerObj,
+      //       usernameAndId,
+      //       audioDuration,
+      //       files,
+      //       () => cleanupFiles(files)
+      //     );
 
-          recordingCount += 1;
-          console.log("ℹ️ Recordings sent: " + recordingCount);
-          appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
+      //     recordingCount += 1;
+      //     console.log("ℹ️ Recordings sent: " + recordingCount);
+      //     appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
 
-          clearAudioReceiveStream(audioReceiveStream, usernameAndId);
-        }
-      );
+      //     clearAudioReceiveStream(audioReceiveStream, usernameAndId);
+      //   }
+      // );
     };
 
     const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
