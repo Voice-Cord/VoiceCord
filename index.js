@@ -21,7 +21,7 @@ const {
 } = require("discord.js");
 const { Transform } = require("stream");
 const { FileWriter } = require("wav");
-const wavAudioDuration = require("wav-audio-length").default;
+const { getAudioDurationInSeconds } = require("get-audio-duration");
 
 const opus = require("@discordjs/opus");
 const { OpusEncoder } = opus;
@@ -518,7 +518,7 @@ function createAndSendVideo(
 }
 
 function generateFileNames(username) {
-  const date = currentTimeFormatted();
+  const date = Date.now();
   const filename = `recordings/${date}_${username}`;
   const imagefileTemp = filename + `.jpeg`;
   const audiofileTemp = filename + `.wav`;
@@ -544,22 +544,11 @@ function prepareRecording(audiofileTemp) {
 }
 
 function getAudioDuration(files) {
-  return new Promise((resolve, reject) => {
-    fs.readFile(files.audiofileTemp, "binary", (err, content) => {
-      if (err) {
-        reject(err);
-        console.log(err);
-        console.log(
-          `❌ File "${files.audiofileTemp}" doesn't have audio length`
-        );
-        return;
-      }
-
-      const buffer = Buffer.from(content, "binary");
-      const audioDuration = wavAudioDuration(buffer);
-      resolve(audioDuration);
-    });
-  });
+  return new Promise((resolve, reject) =>
+    getAudioDurationInSeconds(files.audiofileTemp)
+      .then(resolve)
+      .catch(() => {})
+  );
 }
 
 function cleanupFiles(files) {
@@ -574,7 +563,7 @@ function clearAudioReceiveStream(audioReceiveStream, usernameAndId) {
 }
 
 function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
-  fs.writeFile(telemetryFile, telemetryTable, { flag: "wx" }, function (err) {
+  fs.writeFile(telemetryFile, telemetryTable, { flag: "wx" }, (err) => {
     if (err) {
       if (err.code !== "EEXIST") {
         console.log(err);
@@ -617,6 +606,8 @@ function startVoiceNoteRecording(
   const { fileWriter, stopRecordingManually, decodingStream } =
     prepareRecording(files.audiofileTemp);
   const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
+
+  fileWriter.on("error", () => {});
 
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
