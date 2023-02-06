@@ -677,6 +677,8 @@ function startVoiceNoteRecording(
 
   //This event gets emitted by us
   audioReceiveStream.on("finish_recording", (interaction) => {
+    clearAudioReceiveStream(audioReceiveStream, usernameAndId);
+
     const handleAudio = async () => {
       const audioDuration = await getAudioDuration(files);
       console.log(`ℹ️ Audio duration: ${audioDuration}`);
