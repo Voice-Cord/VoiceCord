@@ -343,27 +343,18 @@ function registerRecordButton(usernameAndId) {
     .setStyle(ButtonStyle.Danger);
 }
 
-async function createWebPFileFromCanvas(canvas, files, callback) {
+async function createImageFileFromCanvas(canvas, files, callback) {
   // Sharp converts lossless webp format to lossy format
-  sharp(await canvas.encode("webp"))
-    .toFormat(sharp.format.webp)
-    .webp({ quality: 80, lossless: false })
-    .toBuffer((_e, webpBuffer) => {
-      const webpFrameBase64 = webpBuffer.toString("base64");
-
-      fs.writeFile(files.webpfileTemp, webpFrameBase64, "base64", () => {
-        const dataUrlContainer = {
-          toDataURL(_imageType, _quality) {
-            return "data:image/webp;base64," + webpFrameBase64;
-          },
-        };
-
-        callback(dataUrlContainer);
-      });
-    });
+  await fs.promises.writeFile(files.imagefileTemp, await canvas.encode("jpeg"));
+  callback();
 }
 
-async function generateWebPFromRecording(user, files, audioDuration, callback) {
+async function generateImageFromRecording(
+  user,
+  files,
+  audioDuration,
+  callback
+) {
   const username = user.displayName;
 
   const cnv_s = { x: 826, y: 280 }; // Canvas size
@@ -449,7 +440,7 @@ async function generateWebPFromRecording(user, files, audioDuration, callback) {
     addDuration();
     addBytext();
 
-    createWebPFileFromCanvas(canvas, files, callback);
+    createImageFileFromCanvas(canvas, files, callback);
   };
 
   const avatar = new Image();
@@ -497,55 +488,15 @@ function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
 
 async function createAndSendVideo(
   interactionOrMessage,
-  webpDataUrlContainerObj,
   usernameAndId,
-  audioDuration,
   files,
   sendCallback
 ) {
-  const video = new Whammy.Video();
-
-  // Have to add 2 frames, so it can be played and seeked on mobile
-  video.add(webpDataUrlContainerObj, 30);
-
-  // This is necessary, as one can only add a frame to webm with the max length of 32766 ms.
-  const addCalculatedFrameLengths = () => {
-    const audioDurationMs = audioDuration * 1000;
-    const frames = audioDurationMs / WEBM_FRAME_MAX_LIMIT;
-
-    let curFrameEndMs = 0;
-    let curTimeToAdd = 0;
-
-    for (let i = 0; i < frames; i++) {
-      if (curFrameEndMs + WEBM_FRAME_MAX_LIMIT > audioDurationMs) {
-        curTimeToAdd = audioDurationMs - curFrameEndMs;
-      } else {
-        curTimeToAdd = WEBM_FRAME_MAX_LIMIT;
-        curFrameEndMs += WEBM_FRAME_MAX_LIMIT;
-      }
-
-      video.add(webpDataUrlContainerObj, curTimeToAdd);
-    }
-  };
-
-  addCalculatedFrameLengths();
-
-  const webmBlobArray = video.compile(true);
-
-  fs.writeFileSync(files.videofileTemp, Buffer.from(webmBlobArray));
-  console.log(
-    `✅ Written video ${files.videofileTemp}, in guild: "` +
-      interactionOrMessage.guild.name +
-      `", in channel: "` +
-      interactionOrMessage?.channel?.name +
-      `"`
-  );
-
   ffmpeg()
-    .addInput(files.videofileTemp)
+    .addInput(files.imagefileTemp)
     .addInput(files.audiofileTemp)
     .output(files.videofileFinal)
-    .outputOptions(["-c:v libx264", "-c:a aac"])
+    .outputOptions(["-c:v libx264", "-crf 0", "-c:a aac"])
     .on("end", () => {
       console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
@@ -573,12 +524,11 @@ async function createAndSendVideo(
 function generateFileNames(username) {
   const date = currentTimeFormatted();
   const filename = `recordings/${date}_${username}`;
-  const webpfileTemp = `frames/${username}`;
+  const imagefileTemp = filename + `.jpeg`;
   const audiofileTemp = filename + `.wav`;
-  const videofileTemp = filename + `_t.webm`;
   const videofileFinal = filename + `.mp4`;
 
-  return { audiofileTemp, videofileTemp, videofileFinal, webpfileTemp };
+  return { imagefileTemp, audiofileTemp, videofileFinal };
 }
 
 function prepareRecording(audiofileTemp) {
@@ -617,9 +567,8 @@ function getAudioDuration(files) {
 }
 
 function cleanupFiles(files) {
-  fs.unlink(files.webpfileTemp, () => {});
+  fs.unlink(files.imagefileTemp, () => {});
   fs.unlink(files.audiofileTemp, () => {});
-  fs.unlink(files.videofileTemp, () => {});
   fs.unlink(files.videofileFinal, () => {});
 }
 
@@ -704,27 +653,17 @@ function startVoiceNoteRecording(
       if (typeof interaction.deferUpdate === "function")
         interaction.deferUpdate();
 
-      generateWebPFromRecording(
-        member,
-        files,
-        audioDuration,
-        (webpDataUrlContainerObj) => {
-          createAndSendVideo(
-            interaction,
-            webpDataUrlContainerObj,
-            usernameAndId,
-            audioDuration,
-            files,
-            () => cleanupFiles(files)
-          );
+      generateImageFromRecording(member, files, audioDuration, () => {
+        createAndSendVideo(interaction, usernameAndId, files, () =>
+          cleanupFiles(files)
+        );
 
-          recordingCount += 1;
-          console.log("ℹ️ Recordings sent: " + recordingCount);
-          appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
+        recordingCount += 1;
+        console.log("ℹ️ Recordings sent: " + recordingCount);
+        appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration);
 
-          clearAudioReceiveStream(audioReceiveStream, usernameAndId);
-        }
-      );
+        clearAudioReceiveStream(audioReceiveStream, usernameAndId);
+      });
     };
 
     const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
