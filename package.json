@@ -14,7 +14,6 @@
     "node-gyp": "^9.3.1",
     "prism-media": "^2.0.0-alpha.0",
     "request": "^2.88.2",
-    "sharp": "^0.31.3",
     "stream": "^0.0.2",
     "wav": "^1.0.2",
     "wav-audio-length": "^0.1.1"

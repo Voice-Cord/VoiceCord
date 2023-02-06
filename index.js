@@ -18,7 +18,6 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionsBitField,
-  BitField,
 } = require("discord.js");
 const { Transform } = require("stream");
 const { FileWriter } = require("wav");
@@ -28,12 +27,11 @@ const opus = require("@discordjs/opus");
 const { OpusEncoder } = opus;
 
 const fs = require("fs");
-const Whammy = require("./whammy");
 const Canvas = require("@napi-rs/canvas");
-const Image = Canvas.Image;
+const CanvasImage = Canvas.Image;
 const path = require("path");
 const request = require("request").defaults({ encoding: null });
-const sharp = require("sharp");
+
 const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 const ffmpeg = require("fluent-ffmpeg");
 ffmpeg.setFfmpegPath(ffmpegPath);
@@ -48,8 +46,6 @@ const recordStartMessageByUsersToRecordOnceEnteringVC = {};
 const telemetryFile = "telemetry/info.txt";
 const telemetryTable =
   "Username and Id | Audio Duration | Guild | Channel | Date | Recording count\n";
-
-const WEBM_FRAME_MAX_LIMIT = 32766;
 
 let recordingCount = 0;
 
@@ -234,7 +230,7 @@ function markExcessMessage(usernameAndId, message) {
   }
 }
 
-async function removeButtonFromMessage(message, buttonId) {
+function _removeButtonFromMessage(message, buttonId) {
   const buttonRow = [];
 
   message?.components?.forEach((actionRow) => {
@@ -443,7 +439,7 @@ async function generateImageFromRecording(
     createImageFileFromCanvas(canvas, files, callback);
   };
 
-  const avatar = new Image();
+  const avatar = new CanvasImage();
   avatar.onload = add_Avatar_Username_Duration_Length_Bytext;
   avatar.onerror = (err) => console.log(err);
   avatar.src = await imageBufferFromUrl(
@@ -486,7 +482,7 @@ function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
   }
 }
 
-async function createAndSendVideo(
+function createAndSendVideo(
   interactionOrMessage,
   usernameAndId,
   files,
