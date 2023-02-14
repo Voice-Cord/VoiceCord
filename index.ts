@@ -23,6 +23,7 @@ import {
     CacheType,
     ChannelType,
     Client,
+    ClientUser,
     GatewayIntentBits,
     Guild,
     GuildMember,
@@ -53,6 +54,20 @@ import ffmpeg from "fluent-ffmpeg";
 const ffmpegPath = ffmpegInstaller.path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+class OpusDecodingStream extends Transform {
+  encoder;
+
+  constructor(options: TransformOptions | undefined, encoder: OpusEncoder) {
+    super(options);
+    this.encoder = encoder;
+  }
+
+  _transform(data: any, _encoding: any, callback: () => void) {
+    this.push(this.encoder.decode(data));
+    callback();
+  }
+}
+
 const maxVoiceNoteTimerByUserIds = {};
 const createThreadTimeoutTimerByGuildIdAndUserIds = {};
 
@@ -65,6 +80,7 @@ const telemetryTable =
   "Username and Id | Audio Duration | Guild | Channel | Date | Recording count\n";
 
 let recordingCount = 0;
+let asdf: number = 0;
 
 require("dotenv/config");
 
@@ -73,20 +89,6 @@ type Files = {
   audiofileTemp: string;
   videofileFinal: string;
 };
-
-class OpusDecodingStream extends Transform {
-  encoder: { decode: (arg0: any) => any };
-
-  constructor(options: TransformOptions | undefined, encoder: OpusEncoder) {
-    super(options);
-    this.encoder = encoder;
-  }
-
-  _transform(data: any, _encoding: any, callback: () => void) {
-    this.push(this.encoder.decode(data));
-    callback();
-  }
-}
 
 function secToHHMMSS(seconds: number) {
   return new Date(seconds * 1000).toISOString().slice(11, 19);
@@ -154,7 +156,7 @@ function leaveGuildIfNotAdmin(guild: Guild): boolean {
   ) {
     if (client.user == null) return true;
 
-    const user = client.user;
+    const user: ClientUser = client.user;
     const channel = <TextBasedChannel>(
       guild.channels.cache.find(
         (_channel) =>
