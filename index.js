@@ -111,8 +111,8 @@ const recordingUsersInitialChannel = {};
 const buttonIdsToFunctions = {
   [recordButtonId]: handleUserRecordStartInteraction,
   [sendButtonId]: tryFinishVoiceNoteOrReplyError,
-  [cancelButtonId]: cancelRecording,
   [createThreadButtonId]: createThread,
+  [cancelButtonId]: cancelRecording,
 };
 
 const client = new Client({
