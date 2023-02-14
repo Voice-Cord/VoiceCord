@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 // TODO:
 // Clean up all commands and messages that were sent.
 // Clean up saved video and audio files from system.
@@ -5,35 +6,51 @@
 // FUTURE:
 // Instead of using the saved frame, generate a webp frame, with information of recorded user and stuff
 
-const {
-  EndBehaviorType,
-  getVoiceConnection,
-  joinVoiceChannel,
-} = require("@discordjs/voice");
-const {
-  ChannelType,
-  Client,
-  GatewayIntentBits,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  PermissionsBitField,
-} = require("discord.js");
-const { Transform } = require("stream");
-const { FileWriter } = require("wav");
-const { getAudioDurationInSeconds } = require("get-audio-duration");
+import {
+    AudioReceiveStream,
+    AudioReceiveStreamOptions,
+    EndBehaviorType,
+    getVoiceConnection,
+    joinVoiceChannel,
+    VoiceReceiver
+} from "@discordjs/voice";
+import {
+    ActionRow,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonInteraction,
+    ButtonStyle,
+    CacheType,
+    ChannelType,
+    Client,
+    GatewayIntentBits,
+    Guild,
+    GuildMember,
+    ImageURLOptions,
+    Message,
+    MessageActionRowComponent,
+    PermissionsBitField,
+    TextBasedChannel,
+    TextChannel,
+    VoiceChannel,
+    VoiceState
+} from "discord.js";
+import { getAudioDurationInSeconds } from "get-audio-duration";
+import { Transform, TransformOptions } from "stream";
+import { FileWriter } from "wav";
 
-const opus = require("@discordjs/opus");
-const { OpusEncoder } = opus;
+import { OpusEncoder } from "@discordjs/opus";
 
-const fs = require("fs");
-const Canvas = require("@napi-rs/canvas");
+import * as Canvas from "@napi-rs/canvas";
+import * as fs from "fs";
+import * as path from "path";
+import * as req from "request";
 const CanvasImage = Canvas.Image;
-const path = require("path");
-const request = require("request").defaults({ encoding: null });
+const request = req.defaults({ encoding: null });
 
-const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
-const ffmpeg = require("fluent-ffmpeg");
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffmpeg from "fluent-ffmpeg";
+const ffmpegPath = ffmpegInstaller.path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 const maxVoiceNoteTimerByUserIds = {};
@@ -51,21 +68,27 @@ let recordingCount = 0;
 
 require("dotenv/config");
 
-class OpusDecodingStream extends Transform {
-  encoder;
+type Files = {
+  imagefileTemp: string;
+  audiofileTemp: string;
+  videofileFinal: string;
+};
 
-  constructor(options, encoder) {
+class OpusDecodingStream extends Transform {
+  encoder: { decode: (arg0: any) => any };
+
+  constructor(options: TransformOptions | undefined, encoder: OpusEncoder) {
     super(options);
     this.encoder = encoder;
   }
 
-  _transform(data, _encoding, callback) {
+  _transform(data: any, _encoding: any, callback: () => void) {
     this.push(this.encoder.decode(data));
     callback();
   }
 }
 
-function secToHHMMSS(seconds) {
+function secToHHMMSS(seconds: number) {
   return new Date(seconds * 1000).toISOString().slice(11, 19);
 }
 
@@ -90,12 +113,12 @@ const createThreadButtonId = "create-thread";
 const voiceRecorderVoiceChannel = "Voice-Cord";
 const threadName = "Voice-Cord";
 
-let membersToUndeafOnceLeavingVoiceRecorderChannel = [];
+let membersToUndeafOnceLeavingVoiceRecorderChannel: GuildMember[] = [];
 
-const excessMessagesByUser = [];
+const excessMessagesByUser: { [key: string]: Message[] } = {};
 
 // The values are: "usernameAndId + <buttonId>"
-let usersRequestedButtons = [];
+let usersRequestedButtons: any = [];
 
 const audioReceiveStreamByUser = {};
 const connectedVoiceByChannelId = {};
@@ -115,7 +138,7 @@ const buttonIdsToFunctions = {
   [cancelButtonId]: cancelRecording,
 };
 
-const client = new Client({
+export const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
@@ -125,16 +148,21 @@ const client = new Client({
   ],
 });
 
-function leaveGuildIfNotAdmin(guild) {
+function leaveGuildIfNotAdmin(guild: Guild): boolean {
   if (
-    !guild.members.me.permissions.has(PermissionsBitField.Flags.Administrator)
+    !guild.members.me?.permissions.has(PermissionsBitField.Flags.Administrator)
   ) {
-    const channel = guild.channels.cache.find(
-      (channel) =>
-        channel.isTextBased() &&
-        channel
-          .permissionsFor(client.user.id)
-          .has(PermissionsBitField.Flags.SendMessages)
+    if (client.user == null) return true;
+
+    const user = client.user;
+    const channel = <TextBasedChannel>(
+      guild.channels.cache.find(
+        (_channel) =>
+          _channel.isTextBased() &&
+          _channel
+            .permissionsFor(user.id)
+            ?.has(PermissionsBitField.Flags.SendMessages)
+      )
     );
     if (channel) {
       channel.send(
@@ -154,19 +182,20 @@ function leaveGuildIfNotAdmin(guild) {
   return false;
 }
 
-client.on("guildCreate", (guild) => {
-  if (!leaveGuildIfNotAdmin(guild));
+client.on("guildCreate", (guild: Guild) => {
+  if (leaveGuildIfNotAdmin(guild)) return;
+
   console.log(`Added to Guild: ${guild.name}, at: ${currentDateAndTime()}`);
 });
 
 client.on("ready", () => {
   console.log("Bot loaded!");
 
-  client?.guilds?.cache.forEach(async (guild) => {
+  client?.guilds?.cache.forEach(async (guild: Guild) => {
     leaveGuildIfNotAdmin(guild);
 
     const voicecordVC = await findOrCreateVoiceRecorderChannel(guild);
-    voicecordVC?.members?.forEach((member) => {
+    voicecordVC?.members?.forEach((member: GuildMember): void => {
       if (!isVoiceDeafened(member?.voice)) {
         deafenMember(member);
       }
@@ -199,29 +228,28 @@ function currentDateAndTime() {
   );
 }
 
-function currentTimeFormatted() {
-  const time = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return time;
-}
-
-function imageBufferFromUrl(url) {
+function imageBufferFromUrl(url: any): Promise<unknown> {
   return new Promise((resolve, _reject) => {
-    request.get(url, (_err, _res, body) => {
-      resolve(Buffer.from(body));
-    });
+    request.get(
+      url,
+      (
+        _err: any,
+        _res: any,
+        body: WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>
+      ) => {
+        resolve(Buffer.from(body));
+      }
+    );
   });
 }
 
-function fontFile(name) {
-  return (filePath = path.join(__dirname, "..", "fonts", name));
+function fontFile(name: string) {
+  return (__filename = path.join(__dirname, "..", "fonts", name));
 }
 
 Canvas.GlobalFonts.registerFromPath(fontFile("Comfortaa-SemiBold.ttf"));
 
-function markExcessMessage(usernameAndId, message) {
+function markExcessMessage(usernameAndId: string | number, message: any): void {
   const value = excessMessagesByUser[usernameAndId];
   if (!value) {
     excessMessagesByUser[usernameAndId] = [message];
@@ -230,24 +258,26 @@ function markExcessMessage(usernameAndId, message) {
   }
 }
 
-function _removeButtonFromMessage(message, buttonId) {
-  const buttonRow = [];
+function _removeButtonFromMessage(message: Message, buttonId: number): void {
+  const buttonRow: ActionRow<MessageActionRowComponent>[] = [];
 
-  message?.components?.forEach((actionRow) => {
-    actionRow?.components?.forEach((button) => {
-      if (button.data.custom_id !== buttonId) buttonRow.push(button);
-    });
-  });
+  message?.components?.forEach(
+    (actionRow: ActionRow<MessageActionRowComponent>): void => {
+      actionRow?.components?.forEach((button: any): void => {
+        if (button.data.custom_id !== buttonId) buttonRow.push(button);
+      });
+    }
+  );
 
   message.edit({ components: [row(buttonRow)] });
 }
 
-function tryClearExcessMessages(usernameAndId) {
+function tryClearExcessMessages(usernameAndId: any): void {
   const messages = excessMessagesByUser[usernameAndId];
   if (messages) {
-    messages.forEach((message) => {
-      message.components?.forEach((actionRow) => {
-        actionRow.components?.forEach((button) => {
+    messages.forEach((message: Message) => {
+      message.components?.forEach((actionRow: any) => {
+        actionRow.components?.forEach((button: any) => {
           if (
             button.data.custom_id !== undefined &&
             button.style !== ButtonStyle.Link
@@ -270,12 +300,12 @@ function tryClearExcessMessages(usernameAndId) {
 const MAX_RECORD_TIME_SECS = 3600;
 
 //TOOD: This is supposed to make some sort of http call and get the max recording time
-function maxRecordingTimeForUserInGuild(_member) {
+function maxRecordingTimeForUserInGuild(_member: any): number {
   return MAX_RECORD_TIME_SECS;
 }
 
-async function findOrCreateVoiceRecorderChannel(guild) {
-  let foundChannel = await guild?.channels.cache.find(
+async function findOrCreateVoiceRecorderChannel(guild: Guild): Promise<any> {
+  let foundChannel = guild?.channels.cache.find(
     (channel) => channel.name === voiceRecorderVoiceChannel
   );
 
@@ -286,24 +316,24 @@ async function findOrCreateVoiceRecorderChannel(guild) {
   return foundChannel;
 }
 
-function row(...components) {
+function row(...components: any): any {
   return new ActionRowBuilder().addComponents(...components);
 }
 
-async function createJoinVcButton(guild) {
+async function createJoinVcButton(guild: Guild): Promise<ButtonBuilder> {
   return new ButtonBuilder()
     .setLabel(joinVCButtonLabel)
     .setStyle(ButtonStyle.Link)
     .setURL(await generateInviteLinkToVoiceCordChannel(guild));
 }
 
-function registerButton(usernameAndId, buttonId) {
+function registerButton(usernameAndId: string, buttonId: string): void {
   const key = usernameAndId + buttonId;
   if (usersRequestedButtons.indexOf(key) === -1)
     usersRequestedButtons.push(key);
 }
 
-function registerCancelButton(usernameAndId) {
+function registerCancelButton(usernameAndId: string): ButtonBuilder {
   registerButton(usernameAndId, cancelButtonId);
 
   return new ButtonBuilder()
@@ -312,7 +342,7 @@ function registerCancelButton(usernameAndId) {
     .setStyle(ButtonStyle.Secondary);
 }
 
-function registerCreateThreadButton(usernameAndId) {
+function registerCreateThreadButton(usernameAndId: string): ButtonBuilder {
   registerButton(usernameAndId, createThreadButtonId);
 
   return new ButtonBuilder()
@@ -321,7 +351,7 @@ function registerCreateThreadButton(usernameAndId) {
     .setStyle(ButtonStyle.Secondary);
 }
 
-function registerSendButton(usernameAndId) {
+function registerSendButton(usernameAndId: string): ButtonBuilder {
   registerButton(usernameAndId, sendButtonId);
 
   return new ButtonBuilder()
@@ -330,7 +360,7 @@ function registerSendButton(usernameAndId) {
     .setStyle(ButtonStyle.Success);
 }
 
-function registerRecordButton(usernameAndId) {
+function registerRecordButton(usernameAndId: string): ButtonBuilder {
   registerButton(usernameAndId, recordButtonId);
 
   return new ButtonBuilder()
@@ -339,19 +369,23 @@ function registerRecordButton(usernameAndId) {
     .setStyle(ButtonStyle.Danger);
 }
 
-async function createImageFileFromCanvas(canvas, files, callback) {
+async function createImageFileFromCanvas(
+  canvas: Canvas.Canvas,
+  files: { imagefileTemp: fs.PathLike | fs.promises.FileHandle },
+  callback: () => void
+): Promise<void> {
   // Sharp converts lossless webp format to lossy format
   await fs.promises.writeFile(files.imagefileTemp, await canvas.encode("jpeg"));
   callback();
 }
 
 async function generateImageFromRecording(
-  user,
-  files,
-  audioDuration,
-  callback
+  member: GuildMember,
+  files: Files,
+  audioDuration: number,
+  callback: () => void
 ) {
-  const username = user.displayName;
+  const username = member.displayName;
 
   const cnv_s = { x: 826, y: 280 }; // Canvas size
   const cnv_col = "#5865f2"; // Canvas color
@@ -396,7 +430,7 @@ async function generateImageFromRecording(
 
   const ctx = canvas.getContext("2d");
 
-  const font = function (size) {
+  const font = function (size: number) {
     return `demi ${size}px Comfortaa`;
   };
 
@@ -439,35 +473,45 @@ async function generateImageFromRecording(
     createImageFileFromCanvas(canvas, files, callback);
   };
 
-  const avatar = new CanvasImage();
+  const avatar: any = new CanvasImage();
   avatar.onload = add_Avatar_Username_Duration_Length_Bytext;
-  avatar.onerror = (err) => console.log(err);
+  avatar.onerror = (err: any) => console.log(err);
   avatar.src = await imageBufferFromUrl(
-    user.displayAvatarURL({
+    member.displayAvatarURL({
       format: "jpg",
       dynamic: true,
       size: 64,
-    })
+    } as ImageURLOptions)
   );
 }
 
-function findUsernameAndId(userId) {
+function findUsernameAndId(userId: string): string {
   const user = client.users.cache.get(userId);
   if (user) return user.tag;
-  else console.log(`User: "${user}" not found.`);
+  else {
+    console.log(`User: "${user}" not found.`);
+    return "";
+  }
 }
 
-function finishVoiceNote(audioReceiveStream, usernameAndId, interaction) {
-  moveToInitialVCIfNeeded(usernameAndId, interaction.member);
+function finishVoiceNote(
+  audioReceiveStream: AudioReceiveStream,
+  usernameAndId: string,
+  interaction: ButtonInteraction<CacheType>
+): void {
+  moveToInitialVCIfNeeded(usernameAndId, interaction.member as GuildMember);
   //TODO only disconnect when is empty
-  getVoiceConnection(interaction.guildId).disconnect();
+  getVoiceConnection(interaction.guildId as string)?.disconnect();
   audioReceiveStream.emit("finish_recording", interaction);
 
   delete audioReceiveStreamByUser[usernameAndId];
   delete recordingUsersInitialChannel[usernameAndId];
 }
 
-function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
+function tryFinishVoiceNoteOrReplyError(
+  interaction: ButtonInteraction,
+  usernameAndId: string
+) {
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
   if (!audioReceiveStream) {
@@ -483,10 +527,10 @@ function tryFinishVoiceNoteOrReplyError(interaction, usernameAndId) {
 }
 
 function createAndSendVideo(
-  interactionOrMessage,
-  usernameAndId,
-  files,
-  sendCallback
+  interactionOrMessage: ButtonInteraction | Message,
+  usernameAndId: string,
+  files: Files,
+  sendCallback: () => void
 ) {
   ffmpeg()
     .addInput(files.imagefileTemp)
@@ -496,12 +540,12 @@ function createAndSendVideo(
     .on("end", () => {
       console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
-      let channel;
+      let channel: TextChannel;
 
-      if (interactionOrMessage.channel.isThread()) {
-        channel = interactionOrMessage.channel.parent;
+      if (interactionOrMessage.channel?.isThread()) {
+        channel = <TextChannel>interactionOrMessage.channel.parent;
       } else {
-        channel = interactionOrMessage.channel;
+        channel = <TextChannel>interactionOrMessage.channel;
         tryClearExcessMessages(usernameAndId);
       }
 
@@ -517,23 +561,27 @@ function createAndSendVideo(
     .run();
 }
 
-function generateFileNames(username) {
+function generateFileNames(username: string) {
   const date = Date.now();
   const filename = `recordings/${date}_${username}`;
   const imagefileTemp = filename + `.jpeg`;
   const audiofileTemp = filename + `.wav`;
   const videofileFinal = filename + `.mp4`;
 
-  return { imagefileTemp, audiofileTemp, videofileFinal };
+  return <Files>{ imagefileTemp, audiofileTemp, videofileFinal };
 }
 
-function prepareRecording(audiofileTemp) {
+function prepareRecording(audiofileTemp: string): {
+  fileWriter: any;
+  stopRecordingManually: AudioReceiveStreamOptions;
+  decodingStream: OpusDecodingStream;
+} {
   const encoder = new OpusEncoder(16000, 1);
   const fileWriter = new FileWriter(audiofileTemp, {
     channels: 1,
     sampleRate: 16000,
   });
-  const stopRecordingManually = {
+  const stopRecordingManually = <AudioReceiveStreamOptions>{
     end: {
       behavior: EndBehaviorType.Manual,
     },
@@ -543,26 +591,33 @@ function prepareRecording(audiofileTemp) {
   return { fileWriter, stopRecordingManually, decodingStream };
 }
 
-function getAudioDuration(files) {
-  return new Promise((resolve, reject) =>
+function getAudioDuration(files: Files): Promise<number> {
+  return new Promise((resolve: (value: number) => void) =>
     getAudioDurationInSeconds(files.audiofileTemp)
       .then(resolve)
       .catch(() => {})
   );
 }
 
-function cleanupFiles(files) {
+function cleanupFiles(files: Files) {
   fs.unlink(files.imagefileTemp, () => {});
   fs.unlink(files.audiofileTemp, () => {});
   fs.unlink(files.videofileFinal, () => {});
 }
 
-function clearAudioReceiveStream(audioReceiveStream, usernameAndId) {
+function clearAudioReceiveStream(
+  audioReceiveStream: AudioReceiveStream,
+  usernameAndId: string
+) {
   audioReceiveStream.destroy();
   delete audioReceiveStreamByUser[usernameAndId];
 }
 
-function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
+function appendInfoToTelemetryFile(
+  interaction: ButtonInteraction,
+  usernameAndId: string,
+  audioDuration: number
+) {
   fs.writeFile(telemetryFile, telemetryTable, { flag: "wx" }, (err) => {
     if (err) {
       if (err.code !== "EEXIST") {
@@ -576,7 +631,7 @@ function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
     const listItem = `${usernameAndId} | ${audioDuration}s | ${
       interaction?.guild?.name
     } | ${
-      interaction?.channel?.name
+      (interaction?.channel as TextChannel).name
     } | ${currentDateAndTime()} | ${recordingCount}\n`;
     fs.appendFile(telemetryFile, listItem, function (err) {
       if (err) console.log(err);
@@ -584,7 +639,7 @@ function appendInfoToTelemetryFile(interaction, usernameAndId, audioDuration) {
   });
 }
 
-function tryStopMaxVoiceRecordingTimeIfNeeded(userId) {
+function tryStopMaxVoiceRecordingTimeIfNeeded(userId: string) {
   const timer = maxVoiceNoteTimerByUserIds[userId];
   if (timer) {
     clearTimeout(timer);
@@ -596,11 +651,11 @@ function tryStopMaxVoiceRecordingTimeIfNeeded(userId) {
 }
 
 function startVoiceNoteRecording(
-  receiver,
-  userId,
-  usernameAndId,
-  member,
-  recordStartMessage
+  receiver: VoiceReceiver,
+  userId: string,
+  usernameAndId: string,
+  member: GuildMember,
+  recordStartMessage: Message
 ) {
   const files = generateFileNames(usernameAndId);
   const { fileWriter, stopRecordingManually, decodingStream } =
@@ -616,13 +671,13 @@ function startVoiceNoteRecording(
     clearAudioReceiveStream(audioReceiveStream, usernameAndId);
 
     const handleAudio = async () => {
-      const audioDuration = await getAudioDuration(files);
+      const audioDuration: number = await getAudioDuration(files);
       console.log(`ℹ️ Audio duration: ${audioDuration}`);
 
       if (audioDuration < 0.01) {
         console.log(`❌ Recording is too short: ${files.audiofileTemp}`);
 
-        let reply;
+        let reply: string = "";
         if (interaction.member.voice.selfMute) reply = "Unmute yourself first!";
         else reply = "Say something, to send it!";
 
@@ -688,21 +743,27 @@ function startVoiceNoteRecording(
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
 
-function abortRecording(files, audioReceiveStream, usernameAndId) {
+function abortRecording(
+  files: Files,
+  audioReceiveStream: AudioReceiveStream,
+  usernameAndId: string
+) {
   cleanupFiles(files);
   clearAudioReceiveStream(audioReceiveStream, usernameAndId);
   console.log(`❌ Aborted recording of ${files.audiofileTemp}`);
 }
 
-function createVoiceRecorderChannel(guild) {
+function createVoiceRecorderChannel(guild: Guild): Promise<VoiceChannel> {
   return guild.channels.create({
     name: voiceRecorderVoiceChannel,
     type: ChannelType.GuildVoice,
   });
 }
 
-async function generateInviteLinkToVoiceCordChannel(guild) {
-  const getInviteLink = async (voiceCordChannel) => {
+async function generateInviteLinkToVoiceCordChannel(
+  guild: Guild
+): Promise<string> {
+  const getInviteLink = async (voiceCordChannel: VoiceChannel) => {
     const invite = await voiceCordChannel.createInvite();
     const link = `https://discord.gg/${invite.code}`;
     return link;
@@ -716,7 +777,11 @@ async function generateInviteLinkToVoiceCordChannel(guild) {
   }
 }
 
-function editRecordingStartMessageToRecording(message, name, usernameAndId) {
+function editRecordingStartMessageToRecording(
+  message: Message,
+  name: string,
+  usernameAndId: string
+): void {
   const buttons = [
     registerSendButton(usernameAndId),
     registerCancelButton(usernameAndId),
@@ -732,12 +797,12 @@ function editRecordingStartMessageToRecording(message, name, usernameAndId) {
 }
 
 function startRecordingUser(
-  member,
-  usernameAndId,
-  recordStartMessage,
-  isThread
+  member: GuildMember,
+  usernameAndId: string,
+  recordStartMessage: Message,
+  isThread: any
 ) {
-  const channel = member?.voice.channel;
+  const channel = <VoiceChannel>member?.voice.channel;
   const memberId = member.id;
 
   const voiceConnection = joinVoiceChannel({
@@ -773,7 +838,10 @@ function startRecordingUser(
   }
 }
 
-async function moveUserToVoiceCordVCIfNeeded(member, usernameAndId) {
+async function moveUserToVoiceCordVCIfNeeded(
+  member: GuildMember,
+  usernameAndId: string
+): Promise<any> {
   const voice = member?.voice;
   const recorderChannel = await findOrCreateVoiceRecorderChannel(member.guild);
   recordingUsersInitialChannel[usernameAndId] = voice.channel;
@@ -782,11 +850,11 @@ async function moveUserToVoiceCordVCIfNeeded(member, usernameAndId) {
 }
 
 function moveUserIfNeededAndRecord(
-  member,
-  usernameAndId,
-  recordStartMessage,
-  isThread
-) {
+  member: GuildMember,
+  usernameAndId: string,
+  recordStartMessage: Message,
+  isThread: boolean
+): void {
   console.log(
     `ℹ️ Started recording user: "${usernameAndId}", at: "${currentDateAndTime()}"`
   );
@@ -796,15 +864,19 @@ function moveUserIfNeededAndRecord(
   });
 }
 
-function handleUserRecordStartInteraction(interaction, usernameAndId) {
-  if (!interaction.member?.voice?.channel) {
+function handleUserRecordStartInteraction(
+  interaction: ButtonInteraction,
+  usernameAndId: string
+) {
+  const member = <GuildMember>interaction.member;
+  if (member.voice?.channel) {
     interaction.reply({
       content: `❌\n Join \`${voiceRecorderVoiceChannel}\` VC first!\nTip: Use the \`${joinVCButtonLabel}\` button`,
       ephemeral: true,
     });
 
     return false;
-  } else if (interaction.member?.voice?.selfMute) {
+  } else if (member?.voice?.selfMute) {
     interaction.reply({
       content: "❌ Unmute yourself first!",
       ephemeral: true,
@@ -819,7 +891,7 @@ function handleUserRecordStartInteraction(interaction, usernameAndId) {
     interaction.deleteReply();
 
     moveUserIfNeededAndRecord(
-      interaction.member,
+      member,
       usernameAndId,
       interaction.message,
       interaction.message.channel.isThread()
@@ -828,17 +900,17 @@ function handleUserRecordStartInteraction(interaction, usernameAndId) {
   }
 }
 
-async function respondRecordCommand(message, usernameAndId) {
+async function respondRecordCommand(message: Message, usernameAndId: string) {
   const channel = message.channel;
-  const guild = message.guild;
-  const member = message.member;
+  const guild = message.guild as Guild;
+  const member = message.member as GuildMember;
 
   message.delete();
 
   if (member?.voice.channel) {
     channel
       .send(member.displayName + " is recording!")
-      .then((recordStartMessage) => {
+      .then((recordStartMessage: Message) => {
         moveUserIfNeededAndRecord(
           member,
           usernameAndId,
@@ -857,14 +929,14 @@ async function respondRecordCommand(message, usernameAndId) {
         content: member.displayName + " wants to record!",
         components: [row(buttons)],
       })
-      .then((recordStartMessage) => {
+      .then((recordStartMessage: Message) => {
         recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId] =
           recordStartMessage;
       });
   }
 }
 
-function ignoreOrRespondToRecordCommand(message) {
+function ignoreOrRespondToRecordCommand(message: Message) {
   const usernameAndId = findUsernameAndId(message.author.id);
   if (!audioReceiveStreamByUser[usernameAndId]) {
     tryClearExcessMessages(usernameAndId);
@@ -872,8 +944,8 @@ function ignoreOrRespondToRecordCommand(message) {
   }
 }
 
-function wasOnlyBotMentioned(message) {
-  return "<@" + client.user.id + ">" === message.content;
+function wasOnlyBotMentioned(message: Message) {
+  return "<@" + client.user?.id + ">" === message.content;
 }
 
 client.on("messageCreate", (message) => {
@@ -897,7 +969,8 @@ client.on("messageCreate", (message) => {
 client.on("interactionCreate", (interaction) => {
   if (!interaction.isButton()) return;
 
-  const usernameAndId = findUsernameAndId(interaction.member.id);
+  const member = interaction.member as GuildMember;
+  const usernameAndId = findUsernameAndId(member.id);
   if (interaction.customId.includes(usernameAndId)) {
     const buttonTypeId = interaction.customId.substring(
       usernameAndId.length,
@@ -917,13 +990,13 @@ client.on("interactionCreate", (interaction) => {
   }
 });
 
-function leaveVoiceChannelIfNotRecording() {
+function leaveVoiceChannelIfNotRecording(guildId: string) {
   if (Object.keys(audioReceiveStreamByUser).length === 0) {
-    client?.voice.disconnect();
+    getVoiceConnection(guildId)?.disconnect();
   }
 }
 
-function abortRecordingAndLeaveVoiceChannelIfNotRecording(member, botVoice) {
+function abortRecordingAndLeaveVoiceChannelIfNotRecording(member: GuildMember) {
   const usernameAndId = findUsernameAndId(member.id);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
@@ -932,22 +1005,28 @@ function abortRecordingAndLeaveVoiceChannelIfNotRecording(member, botVoice) {
   if (audioReceiveStream) {
     audioReceiveStream.emit("abort_recording", member.id);
 
-    leaveVoiceChannelIfNotRecording(botVoice);
+    leaveVoiceChannelIfNotRecording(member.guild.id);
   }
 }
 
-function didRecordingUserLeaveChannelAndNowEmpty(oldState, newState) {
-  const botVoice = connectedVoiceByChannelId[oldState.channelId];
+function didRecordingUserLeaveChannelAndNowEmpty(
+  oldState: VoiceState,
+  newState: VoiceState
+) {
+  const botVoice = connectedVoiceByChannelId[oldState.channelId as string];
 
-  const hasElseThanBotChangedVoiceState = oldState.id !== client.user.id;
+  const hasElseThanBotChangedVoiceState = oldState.id !== client.user?.id;
   const hasChangedChannel = oldState.channelId !== newState.channelId;
   const hasRecordingUserLeftChannelWithBot =
     hasChangedChannel && botVoice && hasElseThanBotChangedVoiceState;
 
-  return { hasRecordingUserLeftChannelWithBot, botVoice };
+  return { hasRecordingUserLeftChannelWithBot };
 }
 
-async function didMoveIntoVoiceRecorderChannel(oldState, newState) {
+async function didMoveIntoVoiceRecorderChannel(
+  oldState: VoiceState,
+  newState: VoiceState
+): Promise<boolean> {
   const voiceRecorderChannelId = (
     await findOrCreateVoiceRecorderChannel(newState.guild)
   )?.id;
@@ -958,25 +1037,25 @@ async function didMoveIntoVoiceRecorderChannel(oldState, newState) {
   );
 }
 
-function isVoiceDeafened(voiceState) {
+function isVoiceDeafened(voiceState: VoiceState): boolean | null | undefined {
   return voiceState.member?.voice.deaf;
 }
 
-async function shouldUndeafVoice(voiceState) {
+async function shouldUndeafVoice(voiceState: VoiceState): Promise<any> {
   const voiceRecorderChannelId = (
     await findOrCreateVoiceRecorderChannel(voiceState.guild)
   )?.id;
 
   return (
     membersToUndeafOnceLeavingVoiceRecorderChannel.find(
-      (member) => member.id === voiceState.member.id
+      (member) => member.id === voiceState.member?.id
     ) &&
     voiceState.channelId !== voiceRecorderChannelId &&
     voiceState.channelId
   );
 }
 
-function undeafenMember(member) {
+function undeafenMember(member: GuildMember) {
   const voice = member?.voice;
   membersToUndeafOnceLeavingVoiceRecorderChannel =
     membersToUndeafOnceLeavingVoiceRecorderChannel.filter(
@@ -985,14 +1064,17 @@ function undeafenMember(member) {
   voice.setDeaf(false);
 }
 
-function moveToInitialVCIfNeeded(usernameAndId, member) {
+function moveToInitialVCIfNeeded(usernameAndId: string, member: GuildMember) {
   if (member?.voice) {
     member?.voice.setChannel(recordingUsersInitialChannel[usernameAndId]);
   }
 }
 
-async function createThread(interaction, usernameAndId) {
-  const guildAndUserId = interaction.guild.id + interaction.user.id;
+async function createThread(
+  interaction: ButtonInteraction,
+  usernameAndId: string
+): Promise<void> {
+  const guildAndUserId = interaction.guild?.id + interaction.user.id;
   if (createThreadTimeoutTimerByGuildIdAndUserIds[guildAndUserId]) {
     interaction.reply({
       content: "Hold on there partner! Creating threads too fast ⚡️🏃🏻💨 kek",
@@ -1013,7 +1095,7 @@ async function createThread(interaction, usernameAndId) {
   });
 
   const newThreadName = threadName + ` ${usernameAndId}`;
-  interaction.channel?.threads?.cache
+  (interaction.channel as TextChannel).threads?.cache
     ?.find((thread) => thread.name === newThreadName)
     ?.delete();
 
@@ -1027,8 +1109,8 @@ async function createThread(interaction, usernameAndId) {
     registerCancelButton(usernameAndId),
   ];
 
-  if (!interaction.member?.voice?.channel) {
-    buttons.splice(0, 0, await createJoinVcButton(interaction.guild));
+  if (!(interaction.member as GuildMember).voice?.channel) {
+    buttons.splice(0, 0, await createJoinVcButton(interaction.guild as Guild));
   }
 
   thread.send({
@@ -1039,8 +1121,11 @@ async function createThread(interaction, usernameAndId) {
   // .then(() => thread.setArchived(true));
 }
 
-function cancelRecording(interaction, _usernameAndId) {
-  const member = interaction.member;
+function cancelRecording(
+  interaction: ButtonInteraction,
+  _usernameAndId: string
+) {
+  const member = interaction.member as GuildMember;
   const usernameAndId = findUsernameAndId(member.id);
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
@@ -1055,59 +1140,65 @@ function cancelRecording(interaction, _usernameAndId) {
   interaction.deferReply();
   interaction.deleteReply();
 
-  audioReceiveStream.emit("abort_recording", interaction.member.id);
+  audioReceiveStream.emit("abort_recording", member.id);
 
   if (member?.voice) {
     moveToInitialVCIfNeeded(usernameAndId, member);
   }
 
-  const channelTheBotIsIn = connectedVoiceByChannelId[member?.voice?.channelId];
+  const channelTheBotIsIn =
+    connectedVoiceByChannelId[<string>member?.voice?.channelId];
   if (channelTheBotIsIn) {
     tryClearExcessMessages(usernameAndId);
-    leaveVoiceChannelIfNotRecording();
+    leaveVoiceChannelIfNotRecording(<string>interaction.guild?.id);
   }
 
   return true;
 }
 
-function deafenMember(member) {
+function deafenMember(member: GuildMember) {
   membersToUndeafOnceLeavingVoiceRecorderChannel.push(member);
   member?.voice.setDeaf(true);
 }
 
-client.on("voiceStateUpdate", async (oldState, newState) => {
-  if (newState.member.id === client.user.id) return;
+client.on(
+  "voiceStateUpdate",
+  async (oldState: VoiceState, newState: VoiceState): Promise<void> => {
+    if (newState.member?.id === client.user?.id) return;
+    if (newState.member == null) return;
+    if (oldState.member == null) return;
 
-  if ((await shouldUndeafVoice(newState)) && oldState.deaf) {
-    undeafenMember(newState.member);
-  } else if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
-    if (!oldState.deaf) {
-      deafenMember(newState.member);
+    if ((await shouldUndeafVoice(newState)) && oldState.deaf) {
+      undeafenMember(newState.member);
+    } else if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
+      if (!oldState.deaf) {
+        deafenMember(newState.member);
+      }
+
+      const usernameAndId = findUsernameAndId(newState.member.id);
+      const recordStartMessage =
+        recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
+      if (recordStartMessage) {
+        moveUserIfNeededAndRecord(
+          newState.member,
+          usernameAndId,
+          recordStartMessage,
+          recordStartMessage.hasThread
+        );
+        delete recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
+      }
     }
 
-    const usernameAndId = findUsernameAndId(newState.member.id);
-    const recordStartMessage =
-      recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
-    if (recordStartMessage) {
-      moveUserIfNeededAndRecord(
-        newState.member,
-        usernameAndId,
-        recordStartMessage,
-        recordStartMessage.hasThread
-      );
-      delete recordStartMessageByUsersToRecordOnceEnteringVC[usernameAndId];
+    const { hasRecordingUserLeftChannelWithBot } =
+      didRecordingUserLeaveChannelAndNowEmpty(oldState, newState);
+
+    //TODO also abort recording, if user left and there are still some left
+    //Because we want to stop a recording of a user, even if others are recording
+    if (hasRecordingUserLeftChannelWithBot) {
+      abortRecordingAndLeaveVoiceChannelIfNotRecording(oldState.member);
     }
   }
-
-  const { hasRecordingUserLeftChannelWithBot, botVoice } =
-    didRecordingUserLeaveChannelAndNowEmpty(oldState, newState);
-
-  //TODO also abort recording, if user left and there are still some left
-  //Because we want to stop a recording of a user, even if others are recording
-  if (hasRecordingUserLeftChannelWithBot) {
-    abortRecordingAndLeaveVoiceChannelIfNotRecording(oldState.member, botVoice);
-  }
-});
+);
 
 //Called when stopping PM2 linux *ONLY*, or node.js (NOT NODEMON)
 process.on(`SIGINT`, () => {
