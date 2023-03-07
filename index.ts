@@ -48,6 +48,13 @@ import ffmpeg from 'fluent-ffmpeg';
 const ffmpegPath = ffmpegInstaller.path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
+
 class OpusDecodingStream extends Transform {
   private readonly encoder: OpusEncoder;
 
@@ -308,12 +315,36 @@ function tryClearExcessMessages(usernameAndId: string): void {
 }
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
-const MAX_RECORD_TIME_SECS = 3600;
+const MAX_RECORD_TIME_SECS = 3600,
+  DEFAULT_RECORD_TIME_SECS = 10;
 
 // TOOD: This is supposed to make some sort of http call and get the max recording time
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function maxRecordingTimeForUserInGuild(_member: GuildMember): number {
-  return MAX_RECORD_TIME_SECS;
+async function maxRecordingTimeForUserInGuild(
+  member: GuildMember
+): Promise<number> {
+  const userId = member.id;
+  const serverId = member.guild.id;
+
+  const { data: userData } = await supabase
+    .from('user-subscriptions')
+    .select('user_id')
+    .eq('user_id', userId);
+
+  if (userData?.length === 0) {
+    const { data: serverData } = await supabase
+      .from('server-subscriptions')
+      .select('server_id')
+      .eq('server_id', serverId);
+
+    if (serverData?.length === 0) {
+      return DEFAULT_RECORD_TIME_SECS;
+    } else {
+      return MAX_RECORD_TIME_SECS;
+    }
+  } else {
+    return MAX_RECORD_TIME_SECS;
+  }
 }
 
 async function findOrCreateVoiceRecorderChannel(
@@ -693,13 +724,13 @@ function tryStopMaxVoiceRecordingTimeIfNeeded(userId: string): boolean {
 }
 
 // eslint-disable-next-line max-lines-per-function
-function startVoiceNoteRecording(
+async function startVoiceNoteRecording(
   receiver: VoiceReceiver,
   userId: string,
   usernameAndId: string,
   member: GuildMember,
   recordStartMessage: Message
-): void {
+): Promise<void> {
   const files = generateFileNames(usernameAndId);
   const { fileWriter, stopRecordingManually, decodingStream } =
     prepareRecording(files.audiofileTemp);
@@ -789,7 +820,7 @@ function startVoiceNoteRecording(
     }
   });
 
-  const maxRecordTimeSecs = maxRecordingTimeForUserInGuild(member);
+  const maxRecordTimeSecs = await maxRecordingTimeForUserInGuild(member);
   maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
     recordStartMessage
       .reply(
@@ -1316,7 +1347,7 @@ client.on(
     ) {
       undeafenMember(newState.member);
     } else if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
-      if (oldState.deaf != false) {
+      if (oldState.deaf == false) {
         deafenMember(newState.member);
       }
 
