@@ -13,16 +13,13 @@ import {
     ButtonStyle,
     ChannelType,
     Client,
-    GatewayIntentBits,
-    Message,
-    PermissionsBitField,
+    GatewayIntentBits, PermissionsBitField,
     type ButtonInteraction,
     type ClientUser,
     type Guild,
     type GuildMember,
     type ImageURLOptions,
-    type Interaction,
-    type TextBasedChannel,
+    type Interaction, type Message, type TextBasedChannel,
     type TextChannel,
     type ThreadChannel,
     type VoiceBasedChannel,
@@ -338,9 +335,8 @@ function tryClearExcessMessages(usernameAndId: string): void {
   delete excessMessagesByUser[usernameAndId];
 }
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
-const PREMIUM_RECORD_TIME_SECS = 3600,
-  DEFAULT_RECORD_TIME_SECS = 15;
+const premiumRecordTimeSecs = 3600,
+  defaultRecordTimeSecs = 15;
 
 async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
   const userId = member.id;
@@ -371,9 +367,9 @@ async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function maxRecordingTime(member: GuildMember): Promise<number> {
   if (await isPremiumUserOrServer(member)) {
-    return PREMIUM_RECORD_TIME_SECS;
+    return premiumRecordTimeSecs;
   } else {
-    return DEFAULT_RECORD_TIME_SECS;
+    return defaultRecordTimeSecs;
   }
 }
 
@@ -1008,15 +1004,13 @@ function handleUserRecordStartInteraction(
   usernameAndId: string
 ): boolean {
   const member = interaction.member as GuildMember;
-  if (member.voice.channel) {
+  if (member.voice.channel == null) {
     interaction
       .reply({
         content: `❌\n Join \`${voiceRecorderVoiceChannel}\` VC first!\nTip: Use the \`${joinVcButtonLabel}\` button`,
         ephemeral: true,
       })
       .catch((e) => console.trace(e));
-
-    return false;
   } else if (member.voice.selfMute != false) {
     interaction
       .reply({
