@@ -14,6 +14,7 @@ import {
     ChannelType,
     Client,
     GatewayIntentBits,
+    Message,
     PermissionsBitField,
     type ButtonInteraction,
     type ClientUser,
@@ -21,7 +22,6 @@ import {
     type GuildMember,
     type ImageURLOptions,
     type Interaction,
-    type Message,
     type TextBasedChannel,
     type TextChannel,
     type ThreadChannel,
@@ -162,6 +162,30 @@ export const client = new Client({
   ],
 });
 
+async function allowThreadCreationIfPremium(
+  message: Message,
+  buttons: ButtonBuilder[],
+  usernameAndId: string
+): Promise<void> {
+  if (
+    !message.channel.isThread() &&
+    message.member !== null &&
+    (await isPremiumUserOrServer(message.member))
+  ) {
+    buttons.push(registerCreateThreadButton(usernameAndId));
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if ((await message.fetch(true)) !== null) {
+      message
+        .edit({
+          components: [row(...buttons)],
+        })
+        .catch(() => {
+          /* Do nothing */
+        });
+    }
+  }
+}
+
 // eslint-disable-next-line max-statements
 function leaveGuildIfNotAdmin(guild: Guild): boolean {
   if (
@@ -285,7 +309,7 @@ function tryClearExcessMessages(usernameAndId: string): void {
   const messages = excessMessagesByUser[usernameAndId];
 
   if (messages == null) {
-    console.trace(
+    console.log(
       `Tried to delete messages from user: "${usernameAndId}", when there we none registered`
     );
     return;
@@ -315,14 +339,10 @@ function tryClearExcessMessages(usernameAndId: string): void {
 }
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
-const MAX_RECORD_TIME_SECS = 3600,
+const PREMIUM_RECORD_TIME_SECS = 3600,
   DEFAULT_RECORD_TIME_SECS = 15;
 
-// TOOD: This is supposed to make some sort of http call and get the max recording time
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function maxRecordingTimeForUserInGuild(
-  member: GuildMember
-): Promise<number> {
+async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
   const userId = member.id;
   const serverId = member.guild.id;
 
@@ -338,12 +358,22 @@ async function maxRecordingTimeForUserInGuild(
       .eq('server_id', serverId);
 
     if (serverData?.length === 0) {
-      return DEFAULT_RECORD_TIME_SECS;
+      return false;
     } else {
-      return MAX_RECORD_TIME_SECS;
+      return true;
     }
   } else {
-    return MAX_RECORD_TIME_SECS;
+    return true;
+  }
+}
+
+// TOOD: This is supposed to make some sort of http call and get the max recording time
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function maxRecordingTime(member: GuildMember): Promise<number> {
+  if (await isPremiumUserOrServer(member)) {
+    return PREMIUM_RECORD_TIME_SECS;
+  } else {
+    return DEFAULT_RECORD_TIME_SECS;
   }
 }
 
@@ -820,7 +850,7 @@ async function startVoiceNoteRecording(
     }
   });
 
-  const maxRecordTimeSecs = await maxRecordingTimeForUserInGuild(member);
+  const maxRecordTimeSecs = await maxRecordingTime(member);
   maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
     recordStartMessage
       .reply(
@@ -886,9 +916,9 @@ function editRecordingStartMessageToRecording(
     registerCancelButton(usernameAndId),
   ];
 
-  if (!message.channel.isThread()) {
-    buttons.push(registerCreateThreadButton(usernameAndId));
-  }
+  allowThreadCreationIfPremium(message, buttons, usernameAndId).catch((e) =>
+    console.trace(e)
+  );
 
   message
     .edit({
@@ -1042,9 +1072,9 @@ async function respondRecordCommand(
   } else {
     const buttons = [await createJoinVcButton(guild)];
 
-    if (!message.channel.isThread()) {
-      buttons.push(registerCreateThreadButton(usernameAndId));
-    }
+    allowThreadCreationIfPremium(message, buttons, usernameAndId).catch((e) =>
+      console.log(e)
+    );
 
     channel
       .send({
