@@ -1265,7 +1265,9 @@ async function shouldUndeafVoice(
   return (
     membersToUndeafOnceLeavingVoiceRecorderChannel.find(
       (member) => member.id === voiceState.member?.id
-    ) && voiceState.channelId !== voiceRecorderChannelId
+    ) &&
+    voiceState.channelId !== voiceRecorderChannelId &&
+    voiceState.channelId != null
   );
 }
 
