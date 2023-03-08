@@ -595,24 +595,45 @@ function finishVoiceNote(
   delete recordingUsersInitialChannel[usernameAndId];
 }
 
+function errorReply(interaction: ButtonInteraction, content: string): void {
+  interaction
+    .reply({
+      content,
+      ephemeral: true,
+    })
+    .catch((e) => console.trace(e));
+}
+
+// eslint-disable-next-line complexity
 function tryFinishVoiceNoteOrReplyError(
   interaction: ButtonInteraction,
   usernameAndId: string
 ): boolean {
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
+  const member: GuildMember = interaction.member as GuildMember;
 
-  if (audioReceiveStream == null) {
-    interaction
-      .reply({
-        content: `❌ Record with \`${recordButtonLabel}\` before sending! 🎙️`,
-        ephemeral: true,
-      })
-      .catch((e) => console.trace(e));
-    return false;
+  if (member.voice.channel == null) {
+    errorReply(
+      interaction,
+      `❌ Join \`${voiceRecorderVoiceChannel}\`, and record with \`${recordCommand}\` before sending!`
+    );
+  } else if (member.voice.selfMute == true && audioReceiveStream == null) {
+    errorReply(interaction, `❌ Unmute yourself, then record before sending!`);
+  } else if (member.voice.selfMute == true) {
+    errorReply(interaction, `❌ Unmute yourself, talk, then send!`);
+  } else if (member.voice.serverMute == true) {
+    errorReply(interaction, `❌ You can't record when you are server muted!`);
+  } else if (audioReceiveStream == null) {
+    errorReply(
+      interaction,
+      `❌ Record with \`${recordCommand}\` before sending!`
+    );
   } else {
     finishVoiceNote(audioReceiveStream, usernameAndId, interaction);
     return true;
   }
+
+  return false;
 }
 
 function createAndSendVideo(
@@ -690,7 +711,7 @@ function getAudioDuration(files: Files): Promise<number> {
   return new Promise((resolve) => {
     getAudioDurationInSeconds(files.audiofileTemp)
       .then(resolve)
-      .catch((e) => console.trace(e));
+      .catch(() => resolve(0));
   });
 }
 
@@ -787,9 +808,9 @@ async function startVoiceNoteRecording(
 
           let reply = '';
           if ((msgOrInteraction.member as GuildMember).voice.selfMute == true) {
-            reply = 'Unmute yourself first!';
+            reply = '❌ Unmute yourself first!';
           } else {
-            reply = 'Say something, to send it!';
+            reply = '❌ Say something, to send it!';
           }
 
           msgOrInteraction
@@ -920,9 +941,13 @@ function editRecordingStartMessageToRecording(
     console.trace(e)
   );
 
+  const newContent = message.content.includes('is recording')
+    ? message.content
+    : `${name} is recording!`;
+
   message
     .edit({
-      content: `${name} is recording!`,
+      content: newContent,
       components: [row(...buttons)],
     })
     .catch((e) => console.trace(e));
@@ -932,20 +957,20 @@ function startRecordingUser(
   member: GuildMember,
   usernameAndId: string,
   recordStartMessage: Message,
-  isThread: boolean
+  isThread: boolean,
+  recorderChannel: VoiceChannel
 ): void {
-  const channel = member.voice.channel as VoiceChannel;
   const memberId = member.id;
 
   const voiceConnection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: channel.guild.id,
+    channelId: recorderChannel.id,
+    guildId: recorderChannel.guild.id,
     selfDeaf: false,
     selfMute: true,
-    adapterCreator: channel.guild.voiceAdapterCreator,
+    adapterCreator: recorderChannel.guild.voiceAdapterCreator,
   });
 
-  connectedVoiceByChannelId[channel.id] = voiceConnection;
+  connectedVoiceByChannelId[recorderChannel.id] = voiceConnection;
 
   const receiver = voiceConnection.receiver;
   startVoiceNoteRecording(
@@ -973,7 +998,7 @@ function startRecordingUser(
 async function moveUserToVoiceCordVcIfNeeded(
   member: GuildMember,
   usernameAndId: string
-): Promise<void> {
+): Promise<VoiceChannel> {
   const voice = member.voice;
   const recorderChannel = await findOrCreateVoiceRecorderChannel(member.guild);
   if (voice.channel != null) {
@@ -981,8 +1006,10 @@ async function moveUserToVoiceCordVcIfNeeded(
     if (voice.channelId !== recorderChannel.id) {
       voice.setChannel(recorderChannel).catch((e) => console.trace(e));
     }
+    return recorderChannel;
   } else {
     console.trace('Channel is null');
+    return recorderChannel;
   }
 }
 
@@ -997,8 +1024,23 @@ function moveUserIfNeededAndRecord(
   );
 
   moveUserToVoiceCordVcIfNeeded(member, usernameAndId)
+    .then((recorderChannel: VoiceChannel) => {
+      startRecordingUser(
+        member,
+        usernameAndId,
+        recordStartMessage,
+        isThread,
+        recorderChannel
+      );
+    })
+    .catch((e) => console.trace(e));
+}
+
+function deferDeleteInteraction(interaction: ButtonInteraction): void {
+  interaction
+    .deferReply()
     .then(() => {
-      startRecordingUser(member, usernameAndId, recordStartMessage, isThread);
+      interaction.deleteReply().catch((e) => console.trace(e));
     })
     .catch((e) => console.trace(e));
 }
@@ -1008,30 +1050,18 @@ function handleUserRecordStartInteraction(
   usernameAndId: string
 ): boolean {
   const member = interaction.member as GuildMember;
+
   if (member.voice.channel == null) {
-    interaction
-      .reply({
-        content: `❌\n Join \`${voiceRecorderVoiceChannel}\` VC first!\nTip: Use the \`${joinVcButtonLabel}\` button`,
-        ephemeral: true,
-      })
-      .catch((e) => console.trace(e));
+    errorReply(
+      interaction,
+      `❌ Join \`${voiceRecorderVoiceChannel}\` VC first!\nTip: Use the \`${joinVcButtonLabel}\` button`
+    );
   } else if (member.voice.selfMute != false) {
-    interaction
-      .reply({
-        content: '❌ Unmute yourself first!',
-        ephemeral: true,
-      })
-      .catch((e) => console.trace(e));
+    errorReply(interaction, '❌ Unmute yourself first!');
   } else if (audioReceiveStreamByUser[usernameAndId] != null) {
-    interaction
-      .reply({
-        content: '❌ You are already recording!',
-        ephemeral: true,
-      })
-      .catch((e) => console.trace(e));
+    errorReply(interaction, '❌ You are already recording!');
   } else {
-    interaction.deferReply().catch((e) => console.trace(e));
-    interaction.deleteReply().catch((e) => console.trace(e));
+    deferDeleteInteraction(interaction);
 
     moveUserIfNeededAndRecord(
       member,
@@ -1056,8 +1086,12 @@ async function respondRecordCommand(
   message.delete().catch((e) => console.trace(e));
 
   if (member.voice.channel) {
+    const text =
+      member.voice.selfMute == true
+        ? `(Unmute yourself!) ${member.displayName} is recording!`
+        : `${member.displayName} is recording!`;
     channel
-      .send(`${member.displayName} is recording!`)
+      .send(text)
       .then((recordStartMessage: Message) => {
         moveUserIfNeededAndRecord(
           member,
@@ -1155,8 +1189,12 @@ client.on('interactionCreate', (interaction: Interaction) => {
   }
 });
 
-function leaveVoiceChannelIfNotRecording(guildId: string): void {
-  if (Object.keys(audioReceiveStreamByUser).length === 0) {
+function leaveVoiceChannelIfNotRecording(
+  guildId: string,
+  aboutToStopRecording: boolean
+): void {
+  const checkAmonut = aboutToStopRecording ? 1 : 0;
+  if (Object.keys(audioReceiveStreamByUser).length === checkAmonut) {
     getVoiceConnection(guildId)?.disconnect();
   }
 }
@@ -1170,9 +1208,10 @@ function abortRecordingAndLeaveVoiceChannelIfNotRecording(
   tryClearExcessMessages(usernameAndId);
 
   if (audioReceiveStream != null) {
+    leaveVoiceChannelIfNotRecording(member.guild.id, true);
     audioReceiveStream.emit('abort_recording', member.id);
-
-    leaveVoiceChannelIfNotRecording(member.guild.id);
+  } else {
+    leaveVoiceChannelIfNotRecording(member.guild.id, false);
   }
 }
 
@@ -1328,17 +1367,11 @@ function cancelRecording(
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
 
   if (audioReceiveStream == null) {
-    interaction
-      .reply({
-        content: 'Cannot cancel when not recording',
-        ephemeral: true,
-      })
-      .catch((e) => console.trace(e));
+    errorReply(interaction, '❌ Cannot cancel when not recording');
     return;
   }
 
-  interaction.deferReply().catch((e) => console.trace(e));
-  interaction.deleteReply().catch((e) => console.trace(e));
+  deferDeleteInteraction(interaction);
 
   audioReceiveStream.emit('abort_recording', member.id);
 
@@ -1350,7 +1383,7 @@ function cancelRecording(
   if (channelTheBotIsIn != null) {
     tryClearExcessMessages(usernameAndId);
     if (interaction.guild?.id != null) {
-      leaveVoiceChannelIfNotRecording(interaction.guild.id);
+      leaveVoiceChannelIfNotRecording(interaction.guild.id, true);
     }
   }
 
