@@ -13,13 +13,16 @@ import {
     ButtonStyle,
     ChannelType,
     Client,
-    GatewayIntentBits, PermissionsBitField,
+    GatewayIntentBits,
+    PermissionsBitField,
     type ButtonInteraction,
     type ClientUser,
     type Guild,
     type GuildMember,
     type ImageURLOptions,
-    type Interaction, type Message, type TextBasedChannel,
+    type Interaction,
+    type Message,
+    type TextBasedChannel,
     type TextChannel,
     type ThreadChannel,
     type VoiceBasedChannel,
@@ -133,6 +136,7 @@ const recordStartMessageByUsersToRecordOnceEnteringVc: Record<
 const excessMessagesByUser: Record<string, Message[] | null> = {};
 const audioReceiveStreamByUser: Record<string, AudioReceiveStream | null> = {};
 const connectedVoiceByChannelId: Record<string, VoiceConnection | null> = {};
+const createdThreadsByUserIds: Record<string, ThreadChannel | null> = {};
 // The voice channels users have been in, before starting record
 const recordingUsersInitialChannel: Record<string, VoiceBasedChannel | null> =
   {};
@@ -1190,17 +1194,25 @@ function didRecordingUserLeaveChannelAndNowEmpty(
   };
 }
 
-async function didMoveIntoVoiceRecorderChannel(
+function didMoveIntoVoiceRecorderChannel(
   oldState: VoiceState,
-  newState: VoiceState
-): Promise<boolean> {
-  const voiceRecorderChannelId = (
-    await findOrCreateVoiceRecorderChannel(newState.guild)
-  ).id;
-
+  newState: VoiceState,
+  voiceCordChannelid: string
+): boolean {
   return (
-    oldState.channelId !== voiceRecorderChannelId &&
-    newState.channelId === voiceRecorderChannelId
+    oldState.channelId !== voiceCordChannelid &&
+    newState.channelId === voiceCordChannelid
+  );
+}
+
+function didMoveOutOfVoiceRecorderChannel(
+  oldState: VoiceState,
+  newState: VoiceState,
+  voiceCordChannelid: string
+): boolean {
+  return (
+    oldState.channelId === voiceCordChannelid &&
+    newState.channelId !== voiceCordChannelid
   );
 }
 
@@ -1238,16 +1250,19 @@ function moveToInitialVcIfNeeded(
   }
 }
 
+// eslint-disable-next-line max-statements
 async function createThread(
   interaction: ButtonInteraction,
   usernameAndId: string
 ): Promise<void> {
   if (interaction.guild?.id == null) {
-    console.trace('Tried to user interaction guild id when it was null');
+    console.trace('Tried to access user interaction guild id when it was null');
     return;
   }
 
-  const guildAndUserId = `${interaction.guild.id}${interaction.user.id}`;
+  const userId = interaction.user.id;
+
+  const guildAndUserId = `${interaction.guild.id}${userId}`;
   if (createThreadTimeoutTimerByGuildIdAndUserIds[guildAndUserId] != null) {
     interaction
       .reply({
@@ -1280,6 +1295,8 @@ async function createThread(
   const thread = await interaction.message.startThread({
     name: newThreadName,
   });
+
+  createdThreadsByUserIds[userId] = thread;
 
   const buttons = [
     registerRecordButton(usernameAndId),
@@ -1361,22 +1378,37 @@ client.on(
 
     if ((await shouldUndeafVoice(newState)) == true && oldState.deaf == false) {
       undeafenMember(newState.member);
-    } else if (await didMoveIntoVoiceRecorderChannel(oldState, newState)) {
-      if (oldState.deaf == false) {
-        deafenMember(newState.member);
-      }
+    } else {
+      const voiceCordChannelId = (
+        await findOrCreateVoiceRecorderChannel(newState.guild)
+      ).id;
+      if (
+        didMoveIntoVoiceRecorderChannel(oldState, newState, voiceCordChannelId)
+      ) {
+        if (oldState.deaf == false) {
+          deafenMember(newState.member);
+        }
 
-      const usernameAndId = findUsernameAndId(newState.member.id);
-      const recordStartMessage =
-        recordStartMessageByUsersToRecordOnceEnteringVc[usernameAndId];
-      if (recordStartMessage != null) {
-        moveUserIfNeededAndRecord(
-          newState.member,
-          usernameAndId,
-          recordStartMessage,
-          recordStartMessage.hasThread
-        );
-        delete recordStartMessageByUsersToRecordOnceEnteringVc[usernameAndId];
+        const usernameAndId = findUsernameAndId(newState.member.id);
+        const recordStartMessage =
+          recordStartMessageByUsersToRecordOnceEnteringVc[usernameAndId];
+        if (recordStartMessage != null) {
+          moveUserIfNeededAndRecord(
+            newState.member,
+            usernameAndId,
+            recordStartMessage,
+            recordStartMessage.hasThread
+          );
+          delete recordStartMessageByUsersToRecordOnceEnteringVc[usernameAndId];
+        }
+      } else if (
+        didMoveOutOfVoiceRecorderChannel(oldState, newState, voiceCordChannelId)
+      ) {
+        const thread = createdThreadsByUserIds[newState.id];
+        if (thread != null) {
+          thread.delete().catch((e) => console.log(e));
+          delete createdThreadsByUserIds[newState.id];
+        }
       }
     }
 

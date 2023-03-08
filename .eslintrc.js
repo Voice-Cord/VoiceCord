@@ -48,7 +48,7 @@ module.exports = {
         "func-name-matching": "warn",
         "func-style": ["warn", "declaration"],
         "grouped-accessor-pairs": ["warn", "setBeforeGet"],
-        "max-depth": ["warn", { max: 2 }],
+        "max-depth": ["warn", { max: 3 }],
         "max-lines": ["warn", 2000],
         "max-lines-per-function": ["warn", { max: 100 }],
         "max-nested-callbacks": ["warn", { max: 5 }],
