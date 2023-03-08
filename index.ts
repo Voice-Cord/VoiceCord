@@ -1409,7 +1409,7 @@ client.on(
       return;
     }
 
-    if ((await shouldUndeafVoice(newState)) == true && oldState.deaf == false) {
+    if ((await shouldUndeafVoice(newState)) == true && newState.deaf == true) {
       undeafenMember(newState.member);
     } else {
       const voiceCordChannelId = (
