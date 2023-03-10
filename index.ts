@@ -467,7 +467,7 @@ async function generateImageFromRecording(
   const username = member.displayName;
 
   /* eslint-disable @typescript-eslint/naming-convention */
-  const cnv_s = { x: 826, y: 280 }; // Canvas size
+  const cnv_s = { x: 412, y: 130 }; // Canvas size
   const cnv_col = '#5865f2'; // Canvas color
   const canvas = Canvas.createCanvas(cnv_s.x, cnv_s.y);
 
@@ -475,39 +475,45 @@ async function generateImageFromRecording(
   const mid_y = cnv_s.y / 2; // Vertical middle
 
   const cnt_col = '#36393f'; // Avatar container color
-  const cnt_m = 30; // Avatar container margin
-  const cnt_br = 20; // Avatar container border-radius
+  const cnt_m = 15; // Avatar container margin
+  const cnt_br = 10; // Avatar container border-radius
   const cnt_x = cnt_m; // Avatar container x
   const cnt_y = cnt_m; // Avatar container y
   const cnt_w = cnv_s.x - cnt_m * 2; // Avatar container width
   const cnt_h = cnv_s.y - cnt_m * 2; // Avatar container height
 
-  const avt_ml = 50; // Avatar left margin
-  const avt_h = 128; // Avatar height
-  const avt_w = 128; // Avatar width
+  const avt_ml = 20; // Avatar left margin
+  const avt_h = 64; // Avatar height
+  const avt_w = 64; // Avatar width
   const avt_x = cnt_m + avt_ml; // Avatar x
   const avt_y = mid_y - avt_h / 2; // Avatar y
 
   const nme_col = '#f6f6f6'; // Name color
-  const nme_s = (avt_h / 3.4) * fnt_s; // Name size
-  const nme_ml = 60; // Name margin left
+  let nme_s = (avt_h / 3.4) * fnt_s; // Name size
+  const nme_ml = 30; // Name margin left
   const nme_x = avt_ml + avt_w + nme_ml; // Name x
   const nme_y = avt_y + nme_s; // Name y
 
   const dur_col = '#5f6166'; // Dur size
-  const dur_s = 30 * fnt_s; // Dur size
-  const dur_mr = 150; // Dur margin right
-  const dur_mt = 10; // Dur margin right
+  const dur_s = 15 * fnt_s; // Dur size
+  const dur_mr = 75; // Dur margin right
   const dur_x = cnt_x + cnt_w - dur_mr; // Dur x
-  const dur_y = avt_y + dur_s + dur_mt; // Dur y
+  const dur_y = nme_y; // Dur y
 
   // "by" refers to the text, which is something like "This was recorded by .."
   const by_col = '#5b5251'; // By color
-  const by_s = 20 * fnt_s; // By size
-  const by_mt = 10 + by_s; // By top margin
+  const by_s = 9 * fnt_s; // By size
+  const by_mt = 4 + by_s; // By top margin
   const by_y = avt_y + avt_h + by_mt; // By y
   const by_x = avt_x; // By x
   /* eslint-enable @typescript-eslint/naming-convention */
+
+  const nameMinimzeThresh = 16;
+  const nameMinimizePerChar = 0.6;
+  // When name clips over other elements
+  if (username.length > nameMinimzeThresh) {
+    nme_s -= (username.length - nameMinimzeThresh) * nameMinimizePerChar;
+  }
 
   const ctx = canvas.getContext('2d');
 
@@ -969,6 +975,13 @@ function startRecordingUser(
     selfMute: true,
     adapterCreator: recorderChannel.guild.voiceAdapterCreator,
   });
+
+  const myVoice =
+    recordStartMessage.guild?.members.me?.voice ??
+    recorderChannel.guild.members.me?.voice;
+  if (myVoice?.serverDeaf == true) {
+    myVoice.setDeaf(false).catch((e) => console.trace(e));
+  }
 
   connectedVoiceByChannelId[recorderChannel.id] = voiceConnection;
 
