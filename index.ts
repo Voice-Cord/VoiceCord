@@ -85,7 +85,7 @@ const createThreadTimeoutMs = 20000;
 
 const telemetryFile = 'telemetry/info.txt';
 const telemetryTable =
-  'Username and Id | Audio Duration | Guild | Channel | Date | Recording count\n';
+  'Username + Tag | UserId | Audio Duration | Guild | Channel | Date | Recording count\n';
 
 let recordingCount = 0;
 
@@ -333,14 +333,14 @@ function tryClearExcessMessages(usernameAndId: string): void {
       /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/restrict-plus-operands */
     });
 
-    void message.delete().catch((e) => console.trace(e));
+    message.delete().catch((e) => console.trace(e));
   });
 
   delete excessMessagesByUser[usernameAndId];
 }
 
 const premiumRecordTimeSecs = 3600,
-  defaultRecordTimeSecs = 15;
+  defaultRecordTimeSecs = 8;
 
 async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
   const userId = member.id;
@@ -756,11 +756,14 @@ function appendInfoToTelemetryFile(
       }
     }
 
-    const listItem = `${usernameAndId} | ${audioDuration}s | ${
-      interaction.guild?.name as string
-    } | ${
-      (interaction.channel as TextChannel).name
-    } | ${currentDateAndTime()} | ${recordingCount}\n`;
+    const listItem = `
+      ${usernameAndId}
+       | ${interaction.member?.user.id as string}s
+       | ${audioDuration}s
+       | ${interaction.guild?.name as string}
+       | ${(interaction.channel as TextChannel).name}
+       | ${currentDateAndTime()}
+       | ${recordingCount}\n`;
     fs.appendFile(telemetryFile, listItem, (err2) => {
       if (err2) {
         console.trace(err2);
@@ -880,10 +883,9 @@ async function startVoiceNoteRecording(
   const maxRecordTimeSecs = await maxRecordingTime(member);
   maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
     recordStartMessage
-      .reply(
-        `<@${member.id}> You reached your max recording time: ${maxRecordTimeSecs} seconds. \n You can send or cancel.`
+      .edit(
+        `<@${member.id}> limit reached ${maxRecordTimeSecs}s. Upgrade at https://voicecord.app/upgrade`
       )
-      .then((message) => markExcessMessage(usernameAndId, message))
       .catch((e) => console.trace(e));
     fileWriter.end();
 
