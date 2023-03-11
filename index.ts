@@ -1051,7 +1051,7 @@ function moveUserIfNeededAndRecord(
     .catch((e) => console.trace(e));
 }
 
-function deferDeleteInteraction(interaction: ButtonInteraction): void {
+function deferDeleteReply(interaction: ButtonInteraction): void {
   interaction
     .deferReply()
     .then(() => {
@@ -1076,7 +1076,7 @@ function handleUserRecordStartInteraction(
   } else if (audioReceiveStreamByUser[usernameAndId] != null) {
     errorReply(interaction, '❌ You are already recording!');
   } else {
-    deferDeleteInteraction(interaction);
+    deferDeleteReply(interaction);
 
     moveUserIfNeededAndRecord(
       member,
@@ -1388,7 +1388,7 @@ function cancelRecording(
     return;
   }
 
-  deferDeleteInteraction(interaction);
+  deferDeleteReply(interaction);
 
   audioReceiveStream.emit('abort_recording', member.id);
 
@@ -1409,7 +1409,7 @@ function cancelRecording(
 
 function deafenMember(member: GuildMember): void {
   membersToUndeafOnceLeavingVoiceRecorderChannel.push(member);
-  void member.voice.setDeaf(true);
+  member.voice.setDeaf(true).catch((e) => console.trace(e));
 }
 
 client.on(
