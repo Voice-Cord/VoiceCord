@@ -1184,7 +1184,7 @@ client.on('interactionCreate', (interaction: Interaction) => {
       interaction.customId.length
     );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const func = buttonIdsToFunctions[buttonTypeId];
+    const func = buttonIdsToFunctions[buttonTypeId as string];
     if (func != null) {
       // eslint-disable-next-line max-depth, @typescript-eslint/no-unsafe-call
       if (func(interaction, usernameAndId) == true) {
