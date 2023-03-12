@@ -1179,7 +1179,7 @@ client.on('interactionCreate', (interaction: Interaction) => {
   const member = interaction.member as GuildMember;
   const usernameAndId = findUsernameAndId(member.id);
   if (interaction.customId.includes(usernameAndId)) {
-    const buttonTypeId = interaction.customId.substring(
+    const buttonTypeId: string = interaction.customId.substring(
       usernameAndId.length,
       interaction.customId.length
     );
