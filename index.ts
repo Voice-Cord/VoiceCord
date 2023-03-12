@@ -276,7 +276,6 @@ function imageBufferFromUrl(url: string): Promise<unknown> {
 }
 
 Canvas.GlobalFonts.registerFromPath('../fonts/Comfortaa-SemiBold.ttf');
-console.log('Font laoded');
 
 function markExcessMessage(usernameAndId: string, message: Message): void {
   const messages: Message[] | null = excessMessagesByUser[usernameAndId];
