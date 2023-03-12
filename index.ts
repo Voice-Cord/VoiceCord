@@ -39,7 +39,6 @@ import 'dotenv/config';
 
 import * as Canvas from '@napi-rs/canvas';
 import * as fs from 'fs';
-import * as path from 'path';
 import * as req from 'request';
 const request = req.defaults({ encoding: null });
 
@@ -276,11 +275,7 @@ function imageBufferFromUrl(url: string): Promise<unknown> {
   });
 }
 
-function fontFile(name: string): string {
-  return (__filename = path.join(__dirname, '..', 'fonts', name));
-}
-
-Canvas.GlobalFonts.registerFromPath(fontFile('Comfortaa-SemiBold.ttf'));
+Canvas.GlobalFonts.registerFromPath('../fonts/Comfortaa-SemiBold.ttf');
 
 function markExcessMessage(usernameAndId: string, message: Message): void {
   const messages: Message[] | null = excessMessagesByUser[usernameAndId];
@@ -1185,6 +1180,7 @@ client.on('interactionCreate', (interaction: Interaction) => {
     );
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     const func = (buttonIdsToFunctions as any)[buttonTypeId];
+    // ^^ Above line: Have to cast to any to satisfy typesciprt transpiler on the server for some reason
     if (func != null) {
       // eslint-disable-next-line max-depth, @typescript-eslint/no-unsafe-call
       if (func(interaction, usernameAndId) == true) {
