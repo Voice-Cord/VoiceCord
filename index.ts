@@ -1460,6 +1460,15 @@ client.on(
           delete createdThreadsByUserIds[newState.id];
         }
       }
+
+      const undeafenedInVoiceCordVc =
+        newState.channelId === voiceCordChannelId &&
+        oldState.deaf == true &&
+        newState.deaf == false;
+
+      if (undeafenedInVoiceCordVc) {
+        deafenMember(newState.member);
+      }
     }
 
     const { hasRecordingUserLeftChannelWithBot } =
