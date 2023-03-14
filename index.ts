@@ -613,10 +613,10 @@ function tryFinishVoiceNoteOrReplyError(
   const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
   const member: GuildMember = interaction.member as GuildMember;
 
-  if (member.voice.channel == null) {
+  if (member.voice.channel == null && audioReceiveStream == null) {
     errorReply(
       interaction,
-      `❌ Join \`${voiceRecorderVoiceChannel}\`, and record with \`${recordCommand}\` before sending!`
+      `❌ Join the \`${voiceRecorderVoiceChannel}\` VC, and record with \`${recordCommand}\` before sending!`
     );
   } else if (member.voice.selfMute == true && audioReceiveStream == null) {
     errorReply(interaction, `❌ Unmute yourself, then record before sending!`);
@@ -1205,29 +1205,9 @@ client.on('interactionCreate', (interaction: Interaction) => {
   }
 });
 
-function leaveVoiceChannelIfNotRecording(
-  guildId: string,
-  aboutToStopRecording: boolean
-): void {
-  const checkAmonut = aboutToStopRecording ? 1 : 0;
-  if (Object.keys(audioReceiveStreamByUser).length === checkAmonut) {
+function leaveVoiceChannelIfNotRecording(guildId: string): void {
+  if (Object.keys(audioReceiveStreamByUser).length === 0) {
     getVoiceConnection(guildId)?.disconnect();
-  }
-}
-
-function abortRecordingAndLeaveVoiceChannelIfNotRecording(
-  member: GuildMember
-): void {
-  const usernameAndId = findUsernameAndId(member.id);
-  const audioReceiveStream = audioReceiveStreamByUser[usernameAndId];
-
-  tryClearExcessMessages(usernameAndId);
-
-  if (audioReceiveStream != null) {
-    leaveVoiceChannelIfNotRecording(member.guild.id, true);
-    audioReceiveStream.emit('abort_recording', member.id);
-  } else {
-    leaveVoiceChannelIfNotRecording(member.guild.id, false);
   }
 }
 
@@ -1282,8 +1262,8 @@ async function shouldUndeafVoice(
     membersToUndeafOnceLeavingVoiceRecorderChannel.find(
       (member) => member.id === voiceState.member?.id
     ) &&
-    voiceState.channelId !== voiceRecorderChannelId &&
-    voiceState.channelId != null
+    voiceState.channelId != null &&
+    voiceState.channelId !== voiceRecorderChannelId
   );
 }
 
@@ -1401,7 +1381,7 @@ function cancelRecording(
   if (channelTheBotIsIn != null) {
     tryClearExcessMessages(usernameAndId);
     if (interaction.guild?.id != null) {
-      leaveVoiceChannelIfNotRecording(interaction.guild.id, true);
+      leaveVoiceChannelIfNotRecording(interaction.guild.id);
     }
   }
 
@@ -1478,7 +1458,7 @@ client.on(
     // TODO also abort recording, if user left and there are still some left
     // Because we want to stop a recording of a user, even if others are recording
     if (hasRecordingUserLeftChannelWithBot) {
-      abortRecordingAndLeaveVoiceChannelIfNotRecording(oldState.member);
+      leaveVoiceChannelIfNotRecording(oldState.guild.id);
     }
   }
 );
