@@ -1,33 +1,33 @@
 import {
-    EndBehaviorType,
-    getVoiceConnection,
-    joinVoiceChannel,
-    type AudioReceiveStream,
-    type AudioReceiveStreamOptions,
-    type VoiceConnection,
-    type VoiceReceiver
+  EndBehaviorType,
+  getVoiceConnection,
+  joinVoiceChannel,
+  type AudioReceiveStream,
+  type AudioReceiveStreamOptions,
+  type VoiceConnection,
+  type VoiceReceiver,
 } from '@discordjs/voice';
 import {
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
-    ChannelType,
-    Client,
-    GatewayIntentBits,
-    PermissionsBitField,
-    type ButtonInteraction,
-    type ClientUser,
-    type Guild,
-    type GuildMember,
-    type ImageURLOptions,
-    type Interaction,
-    type Message,
-    type TextBasedChannel,
-    type TextChannel,
-    type ThreadChannel,
-    type VoiceBasedChannel,
-    type VoiceChannel,
-    type VoiceState
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ChannelType,
+  Client,
+  GatewayIntentBits,
+  PermissionsBitField,
+  type ButtonInteraction,
+  type ClientUser,
+  type Guild,
+  type GuildMember,
+  type ImageURLOptions,
+  type Interaction,
+  type Message,
+  type TextBasedChannel,
+  type TextChannel,
+  type ThreadChannel,
+  type VoiceBasedChannel,
+  type VoiceChannel,
+  type VoiceState,
 } from 'discord.js';
 import { getAudioDurationInSeconds } from 'get-audio-duration';
 import { Transform, type TransformOptions } from 'stream';
@@ -876,6 +876,7 @@ async function startVoiceNoteRecording(
   });
 
   const maxRecordTimeSecs = await maxRecordingTime(member);
+  console.log(`User: "${member.id}", Record limit: "${maxRecordTimeSecs}s"`);
   maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
     recordStartMessage
       .edit(
@@ -883,6 +884,10 @@ async function startVoiceNoteRecording(
       )
       .catch((e) => console.trace(e));
     fileWriter.end();
+
+    console.log(
+      `Limited recording time, user: "${member.id}", time: "${maxRecordTimeSecs}s"`
+    );
 
     const timer = maxVoiceNoteTimerByUserIds[member.id];
     if (timer != null) {
