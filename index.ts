@@ -334,8 +334,8 @@ function tryClearExcessMessages(usernameAndId: string): void {
   delete excessMessagesByUser[usernameAndId];
 }
 
-const premiumRecordTimeSecs = 3600,
-  defaultRecordTimeSecs = 8;
+const premiumRecordTimeSecs = 3600;
+const defaultRecordTimeSecs = 12;
 
 async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
   const userId = member.id;
@@ -751,14 +751,11 @@ function appendInfoToTelemetryFile(
       }
     }
 
-    const listItem = `
-      ${usernameAndId}
-       | ${interaction.member?.user.id as string}s
-       | ${audioDuration}s
-       | ${interaction.guild?.name as string}
-       | ${(interaction.channel as TextChannel).name}
-       | ${currentDateAndTime()}
-       | ${recordingCount}\n`;
+    const listItem = ` ${usernameAndId} | ${
+      interaction.member?.user.id as string
+    }s | ${audioDuration}s | ${interaction.guild?.name as string} | ${
+      (interaction.channel as TextChannel).name
+    } | ${currentDateAndTime()} | ${recordingCount}\n`;
     fs.appendFile(telemetryFile, listItem, (err2) => {
       if (err2) {
         console.trace(err2);
