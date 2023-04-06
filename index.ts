@@ -174,7 +174,7 @@ async function allowThreadCreationIfPremium(
   ) {
     buttons.push(registerCreateThreadButton(usernameAndId));
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if ((await message.fetch(true)) !== null) {
+    if ((await message.fetch(true).catch()) !== null) {
       message
         .edit({
           components: [row(...buttons)],
@@ -200,6 +200,8 @@ function leaveGuildIfNotAdmin(guild: Guild): boolean {
     const user: ClientUser = client.user;
     const channel = guild.channels.cache.find(
       (_channel) =>
+        // For some reason istextbased can sometimes be not a function, even though type defines it
+        typeof _channel.isTextBased == "function" &&
         _channel.isTextBased() &&
         _channel
           .permissionsFor(user.id)
@@ -1270,7 +1272,8 @@ function undeafenMember(member: GuildMember): void {
     membersToUndeafOnceLeavingVoiceRecorderChannel.filter(
       (mem) => mem.id !== member.id
     );
-  voice.setDeaf(false).catch((e) => console.trace(e));
+  if(voice.channel != null)
+    voice.setDeaf(false).catch((e) => console.trace(e));
 }
 
 function moveToInitialVcIfNeeded(

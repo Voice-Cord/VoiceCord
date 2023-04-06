@@ -42,7 +42,7 @@ module.exports = {
           { ignoreConsecutiveComments: true },
         ],
         complexity: ["warn", { max: 5 }],
-        curly: "warn",
+        curly: "off",
         "default-case": "warn",
         "default-case-last": "warn",
         "func-name-matching": "warn",
