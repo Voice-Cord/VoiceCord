@@ -337,7 +337,7 @@ function tryClearExcessMessages(usernameAndId: string): void {
 }
 
 const premiumRecordTimeSecs = 3600;
-const defaultRecordTimeSecs = 12;
+const defaultRecordTimeSecs = 20;
 
 async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
   const userId = member.id;
