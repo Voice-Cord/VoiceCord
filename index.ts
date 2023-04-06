@@ -339,7 +339,7 @@ function tryClearExcessMessages(usernameAndId: string): void {
 const premiumRecordTimeSecs = 3600;
 const defaultRecordTimeSecs = 20;
 
-async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
+async function isPremiumUserOrServer(member: GuildMember): Promise<{ serverPremium: boolean; userPremium: boolean; }> {
   const userId = member.id;
   const serverId = member.guild.id;
 
@@ -355,22 +355,23 @@ async function isPremiumUserOrServer(member: GuildMember): Promise<boolean> {
       .eq('server_id', serverId);
 
     if (serverData?.length === 0) {
-      return false;
+      return { serverPremium: false, userPremium: false };
     } else {
-      return true;
+      return { serverPremium: true, userPremium: false };
     }
   } else {
-    return true;
+    return { serverPremium: false, userPremium: true };
   }
 }
 
 // TOOD: This is supposed to make some sort of http call and get the max recording time
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function maxRecordingTime(member: GuildMember): Promise<number> {
-  if (await isPremiumUserOrServer(member)) {
-    return premiumRecordTimeSecs;
+async function maxRecordingTime(member: GuildMember): Promise<{ maxRecordTimeSecs: number; serverPremium: boolean; userPremium: boolean; }> {
+  const { serverPremium, userPremium } = await isPremiumUserOrServer(member)
+  if (serverPremium) {
+    return { maxRecordTimeSecs: premiumRecordTimeSecs, serverPremium, userPremium };
   } else {
-    return defaultRecordTimeSecs;
+    return { maxRecordTimeSecs: defaultRecordTimeSecs, serverPremium, userPremium };
   }
 }
 
@@ -459,13 +460,14 @@ async function generateImageFromRecording(
   member: GuildMember,
   files: Files,
   audioDuration: number,
+  userPremium: boolean,
   callback: () => void
 ): Promise<void> {
   const username = member.displayName;
 
   /* eslint-disable @typescript-eslint/naming-convention */
   const cnv_s = { x: 412, y: 130 }; // Canvas size
-  const cnv_col = '#5865f2'; // Canvas color
+  const cnv_col = userPremium ? '#6397F7' : '#5865f2'; // Canvas color
   const canvas = Canvas.createCanvas(cnv_s.x, cnv_s.y);
 
   const fnt_s = 1; // Font size, this value is multiplied with every text size
@@ -485,7 +487,7 @@ async function generateImageFromRecording(
   const avt_x = cnt_m + avt_ml; // Avatar x
   const avt_y = mid_y - avt_h / 2; // Avatar y
 
-  const nme_col = '#f6f6f6'; // Name color
+  const nme_col = userPremium ? '#FFEFBB' : '#f6f6f6'; // Name color
   let nme_s = (avt_h / 3.4) * fnt_s; // Name size
   const nme_ml = 30; // Name margin left
   const nme_x = avt_ml + avt_w + nme_ml; // Name x
@@ -523,8 +525,10 @@ async function generateImageFromRecording(
     ctx.fillRect(0, 0, cnv_s.x, cnv_s.y);
 
     ctx.fillStyle = cnt_col;
+    if(userPremium) { ctx.shadowColor = '#162238'; ctx.shadowBlur = 20 }
     ctx.roundRect(cnt_x, cnt_y, cnt_w, cnt_h, cnt_br);
     ctx.fill();
+    ctx.shadowBlur = 0
   }
 
   addBackgroundAndAvatarContainer();
@@ -532,7 +536,19 @@ async function generateImageFromRecording(
   function addUsername(): void {
     ctx.fillStyle = nme_col;
     ctx.font = font(nme_s);
+    if(userPremium) { ctx.shadowColor = '#A8B6D6'; ctx.shadowBlur = 8 }
     ctx.fillText(username, nme_x, nme_y);
+    ctx.shadowBlur = 0
+  }
+
+  function addPremium(): void {
+    if(!userPremium) return;
+    ctx.shadowColor = '#A8B6D6'
+    ctx.shadowBlur = 3
+    ctx.fillStyle = '#FFF5AD';
+    ctx.font = font(nme_s - 3);
+    ctx.fillText("PREMIUM", cnt_x + cnt_w - 97, avt_y + avt_h + 4);
+    ctx.shadowBlur = 0
   }
 
   function addDuration(): void {
@@ -550,10 +566,13 @@ async function generateImageFromRecording(
 
   function addAvatarUsernameDurationLengthBytext(): void {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    if(userPremium) { ctx.shadowColor = '#232428'; ctx.shadowBlur = 30 }
     ctx.drawImage(avatar, avt_x, avt_y, avt_h, avt_w);
+    ctx.shadowBlur = 0
     addUsername();
     addDuration();
     addBytext();
+    addPremium();
 
     createImageFileFromCanvas(canvas, files, callback).catch((e) =>
       console.trace(e)
@@ -790,6 +809,8 @@ async function startVoiceNoteRecording(
     prepareRecording(files.audiofileTemp);
   const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
 
+  let userPremium = false;
+
   fileWriter.on('error', () => {
     /* Do nothing */
   });
@@ -833,7 +854,7 @@ async function startVoiceNoteRecording(
           msgOrInteraction.deferUpdate().catch((e) => console.trace(e));
         }
 
-        generateImageFromRecording(member, files, audioDuration, () => {
+        generateImageFromRecording(member, files, audioDuration, userPremium, () => {
           createAndSendVideo(msgOrInteraction, usernameAndId, files, () =>
             cleanupFiles(files)
           );
@@ -874,7 +895,9 @@ async function startVoiceNoteRecording(
     }
   });
 
-  const maxRecordTimeSecs = await maxRecordingTime(member);
+  const { maxRecordTimeSecs, userPremium: _userPremium } = await maxRecordingTime(member);
+  userPremium = _userPremium;
+
   console.log(`User: "${member.id}", Record limit: "${maxRecordTimeSecs}s"`);
   maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
     recordStartMessage
