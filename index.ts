@@ -122,7 +122,6 @@ let usersRequestedButtons: string[] = [];
 
 // | undefined because eslint makes error, doesnt understand thatn array can
 // return null
-const maxVoiceNoteTimerByUserIds: Record<string, NodeJS.Timeout | null> = {};
 const createThreadTimeoutTimerByGuildIdAndUserIds: Record<
   string,
   NodeJS.Timeout | null
@@ -785,31 +784,43 @@ function appendInfoToTelemetryFile(
   });
 }
 
-function tryStopMaxVoiceRecordingTimeIfNeeded(userId: string): boolean {
-  const timer = maxVoiceNoteTimerByUserIds[userId];
-  if (timer != null) {
-    clearTimeout(timer);
-    delete maxVoiceNoteTimerByUserIds.userId;
-    return true;
-  } else {
-    return false;
-  }
-}
-
 // eslint-disable-next-line max-lines-per-function
-async function startVoiceNoteRecording(
+function startVoiceNoteRecording(
   receiver: VoiceReceiver,
   userId: string,
   usernameAndId: string,
   member: GuildMember,
   recordStartMessage: Message
-): Promise<void> {
+): void {
   const files = generateFileNames(usernameAndId);
   const { fileWriter, stopRecordingManually, decodingStream } =
     prepareRecording(files.audiofileTemp);
   const audioReceiveStream = receiver.subscribe(userId, stopRecordingManually);
+  let writeFinished = false;
 
   let userPremium = false;
+  let maxRecordTimeSecs = premiumRecordTimeSecs;
+
+  maxRecordingTime(member).then(({ maxRecordTimeSecs: _maxRecordTimeSecs, userPremium: _userPremium }) => {
+    console.log(`User: "${member.id}", Record limit: "${maxRecordTimeSecs}s"`);
+    maxRecordTimeSecs = _maxRecordTimeSecs
+    userPremium = _userPremium
+  }).catch((e) => console.trace(e));
+
+  fileWriter.on('data', () => {
+    // https://social.msdn.microsoft.com/Forums/windows/en-US/5a92be69-3b4e-4d92-b1d2-141ef0a50c91/how-to-calculate-duration-of-wave-file-from-its-size?forum=winforms
+    // time = FileLength / (Sample Rate * Channels * Bits per sample /8)
+    const length = fileWriter.file.bytesWritten / (16000 * 1 * 16/8)
+
+    if(length > maxRecordTimeSecs) {
+      recordStartMessage
+        .edit(
+          `<@${member.id}> limit reached ${maxRecordTimeSecs}s. Upgrade at https://voicecord.app/upgrade`
+        )
+        .catch((e) => console.trace(e));
+      fileWriter.end(() => { writeFinished = true; });
+    }
+  });
 
   fileWriter.on('error', () => {
     /* Do nothing */
@@ -871,56 +882,30 @@ async function startVoiceNoteRecording(
         }).catch((e) => console.trace(e));
       }
 
-      const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(userId);
-      if (stoppedTimer) {
+      if (!writeFinished) {
         fileWriter.end(() => {
-          void handleAudio().catch((e) => console.trace(e));
+          handleAudio().catch((e) => console.trace(e));
+          writeFinished = true;
         });
       } else {
         handleAudio().catch((e) => console.trace(e));
+        writeFinished = true;
       }
     }
   );
 
   // This event gets emitted by us
-  audioReceiveStream.on('abort_recording', (abortedUserId: string) => {
-    const stoppedTimer = tryStopMaxVoiceRecordingTimeIfNeeded(abortedUserId);
-
-    if (stoppedTimer) {
-      fileWriter.end(() =>
+  audioReceiveStream.on('abort_recording', () => {
+    if (!writeFinished) {
+      fileWriter.end(() => {
         abortRecording(files, audioReceiveStream, usernameAndId)
-      );
+        writeFinished = true;
+      });
     } else {
       abortRecording(files, audioReceiveStream, usernameAndId);
+      writeFinished = true;
     }
   });
-
-  const { maxRecordTimeSecs, userPremium: _userPremium } = await maxRecordingTime(member);
-  userPremium = _userPremium;
-
-  console.log(`User: "${member.id}", Record limit: "${maxRecordTimeSecs}s"`);
-  maxVoiceNoteTimerByUserIds[member.id] = setTimeout(() => {
-    recordStartMessage
-      .edit(
-        `<@${member.id}> limit reached ${maxRecordTimeSecs}s. Upgrade at https://voicecord.app/upgrade`
-      )
-      .catch((e) => console.trace(e));
-    fileWriter.end();
-
-    console.log(
-      `Limited recording time, user: "${member.id}", time: "${maxRecordTimeSecs}s"`
-    );
-
-    const timer = maxVoiceNoteTimerByUserIds[member.id];
-    if (timer != null) {
-      clearTimeout(timer);
-    } else {
-      console.trace(
-        `Tried clearing timeout from user "${member.id}" when it returned null`
-      );
-    }
-    delete maxVoiceNoteTimerByUserIds[member.id];
-  }, maxRecordTimeSecs * 1000);
 
   audioReceiveStreamByUser[usernameAndId] = audioReceiveStream;
 }
@@ -1016,7 +1001,7 @@ function startRecordingUser(
     usernameAndId,
     member,
     recordStartMessage
-  ).catch((e) => console.trace(e));
+  );
 
   usersRequestedButtons = [];
   tryClearExcessMessages(usernameAndId);
