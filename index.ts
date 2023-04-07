@@ -462,7 +462,6 @@ async function generateImageFromRecording(
   userPremium: boolean,
   callback: () => void
 ): Promise<void> {
-  userPremium = true;
   const username = member.displayName;
 
   /* eslint-disable @typescript-eslint/naming-convention */
