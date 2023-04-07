@@ -526,7 +526,7 @@ async function generateImageFromRecording(
     ctx.fillStyle = cnt_col;
     if(userPremium) {
       ctx.shadowColor = '#162238';
-      ctx.shadowBlur = 20 
+      ctx.shadowBlur = 20;
       const gradient = ctx.createRadialGradient(cnt_x, cnt_y, 100, cnt_x + cnt_w, cnt_y + cnt_h, 100)
       gradient.addColorStop(0, '#2D3954')
       gradient.addColorStop(1, '#2D5B5D')
@@ -542,7 +542,7 @@ async function generateImageFromRecording(
   function addUsername(): void {
     ctx.fillStyle = nme_col;
     ctx.font = font(nme_s);
-    if(userPremium) { ctx.shadowColor = '#A8B6D6'; ctx.shadowBlur = 8 }
+    if(userPremium) { ctx.shadowColor = '#A8B6D6'; ctx.shadowBlur = 8; }
     ctx.fillText(username, nme_x, nme_y);
     ctx.shadowBlur = 0
   }
@@ -558,7 +558,13 @@ async function generateImageFromRecording(
   }
 
   function addDuration(): void {
-    ctx.fillStyle = dur_col;
+    if(userPremium) {
+      const gradient = ctx.createRadialGradient(dur_x, dur_y, 100, cnt_x + cnt_w, cnt_y + cnt_h, 100)
+      gradient.addColorStop(0, '#546BBC')
+      gradient.addColorStop(1, '#8AF7D5')
+      ctx.fillStyle = gradient;
+    }
+    else ctx.fillStyle = dur_col;
     ctx.font = font(dur_s);
     ctx.fillText(secToHHMMSS(audioDuration), dur_x, dur_y);
   }
