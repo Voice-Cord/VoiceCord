@@ -567,6 +567,7 @@ async function generateImageFromRecording(
     ctx.fillStyle = dur_col;
     ctx.font = font(dur_s);
     ctx.fillText(secToHHMMSS(audioDuration), dur_x, dur_y);
+    ctx.shadowBlur = 0;
   }
 
   // "by" refers to the text, which is something like "This was recorded by .."
