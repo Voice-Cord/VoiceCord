@@ -524,7 +524,14 @@ async function generateImageFromRecording(
     ctx.fillRect(0, 0, cnv_s.x, cnv_s.y);
 
     ctx.fillStyle = cnt_col;
-    if(userPremium) { ctx.shadowColor = '#162238'; ctx.shadowBlur = 20 }
+    if(userPremium) {
+      ctx.shadowColor = '#162238';
+      ctx.shadowBlur = 20 
+      const gradient = ctx.createRadialGradient(cnt_x, cnt_y, 100, cnt_x + cnt_w, cnt_y + cnt_h, 100)
+      gradient.addColorStop(0, '#2D3954')
+      gradient.addColorStop(1, '#2D5B5D')
+      ctx.fillStyle = gradient;
+    }
     ctx.roundRect(cnt_x, cnt_y, cnt_w, cnt_h, cnt_br);
     ctx.fill();
     ctx.shadowBlur = 0
@@ -545,8 +552,8 @@ async function generateImageFromRecording(
     ctx.shadowColor = '#A8B6D6'
     ctx.shadowBlur = 3
     ctx.fillStyle = '#FFF5AD';
-    ctx.font = font(nme_s - 3);
-    ctx.fillText("PREMIUM", cnt_x + cnt_w - 97, avt_y + avt_h + 4);
+    ctx.font = font(nme_s - 6);
+    ctx.fillText("PREMIUM", cnt_x + cnt_w - 82, avt_y + avt_h + 4);
     ctx.shadowBlur = 0
   }
 
