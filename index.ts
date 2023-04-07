@@ -462,6 +462,7 @@ async function generateImageFromRecording(
   userPremium: boolean,
   callback: () => void
 ): Promise<void> {
+  userPremium = true;
   const username = member.displayName;
 
   /* eslint-disable @typescript-eslint/naming-convention */
@@ -492,7 +493,7 @@ async function generateImageFromRecording(
   const nme_x = avt_ml + avt_w + nme_ml; // Name x
   const nme_y = avt_y + nme_s; // Name y
 
-  const dur_col = '#5f6166'; // Dur size
+  const dur_col = userPremium ? '#FFF5AD' : '#5f6166'; // Dur size
   const dur_s = 15 * fnt_s; // Dur size
   const dur_mr = 75; // Dur margin right
   const dur_x = cnt_x + cnt_w - dur_mr; // Dur x
@@ -540,9 +541,14 @@ async function generateImageFromRecording(
   addBackgroundAndAvatarContainer();
 
   function addUsername(): void {
-    ctx.fillStyle = nme_col;
     ctx.font = font(nme_s);
-    if(userPremium) { ctx.shadowColor = '#A8B6D6'; ctx.shadowBlur = 8; }
+    if(userPremium) {
+      const gradient = ctx.createRadialGradient(nme_x, nme_y, 50, cnt_x + cnt_w / 2, cnt_y + cnt_h / 2, 50)
+      gradient.addColorStop(0, '#546BBC')
+      gradient.addColorStop(1, '#8AF7D5')
+      ctx.fillStyle = gradient;
+    }
+    else ctx.fillStyle = nme_col;
     ctx.fillText(username, nme_x, nme_y);
     ctx.shadowBlur = 0
   }
@@ -558,13 +564,8 @@ async function generateImageFromRecording(
   }
 
   function addDuration(): void {
-    if(userPremium) {
-      const gradient = ctx.createRadialGradient(dur_x, dur_y, 100, cnt_x + cnt_w, cnt_y + cnt_h, 100)
-      gradient.addColorStop(0, '#546BBC')
-      gradient.addColorStop(1, '#8AF7D5')
-      ctx.fillStyle = gradient;
-    }
-    else ctx.fillStyle = dur_col;
+    if(userPremium) { ctx.shadowColor = '#A8B6D6'; ctx.shadowBlur = 2; }
+    ctx.fillStyle = dur_col;
     ctx.font = font(dur_s);
     ctx.fillText(secToHHMMSS(audioDuration), dur_x, dur_y);
   }
