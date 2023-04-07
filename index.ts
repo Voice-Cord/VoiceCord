@@ -450,7 +450,7 @@ async function createImageFileFromCanvas(
   callback: () => void
 ): Promise<void> {
   // Sharp converts lossless webp format to lossy format
-  await fs.promises.writeFile(files.imagefileTemp, await canvas.encode('jpeg'));
+  await fs.promises.writeFile(files.imagefileTemp, await canvas.encode('jpeg', 100));
   callback();
 }
 
@@ -667,7 +667,7 @@ function createAndSendVideo(
     .addInput(files.imagefileTemp)
     .addInput(files.audiofileTemp)
     .output(files.videofileFinal)
-    .outputOptions(['-c:v libx264', '-crf 0', '-c:a aac'])
+    .outputOptions(['-vcodec mpeg4'])
     .on('end', () => {
       console.log(`✅ Combined video and audio ${files.videofileFinal}`);
 
@@ -737,15 +737,9 @@ function getAudioDuration(files: Files): Promise<number> {
 }
 
 function cleanupFiles(files: Files): void {
-  fs.unlink(files.imagefileTemp, () => {
-    /* Do nothing */
-  });
-  fs.unlink(files.audiofileTemp, () => {
-    /* Do nothing */
-  });
-  fs.unlink(files.videofileFinal, () => {
-    /* Do nothing */
-  });
+  // fs.unlink(files.imagefileTemp, () => { /* Do nothing */ });
+  // fs.unlink(files.audiofileTemp, () => { /* Do nothing */ });
+  // fs.unlink(files.videofileFinal, () => { /* Do nothing */ });
 }
 
 function clearAudioReceiveStream(
