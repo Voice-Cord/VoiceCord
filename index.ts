@@ -98,8 +98,8 @@ const email = 'voicecordhelp@gmail.com';
 const adminInviteLink =
   'https://discord.com/api/oauth2/authorize?client_id=1068674033832427540&permissions=8&scope=bot%20applications.commands';
 
-const voiceRecorderDisplayName = 'VoiceCord';
-const voiceRecorderBy = `Recorded on Discord by ${voiceRecorderDisplayName}`;
+const voiceRecorderDisplayName = 'Voicecord';
+const voiceRecorderBy = `${voiceRecorderDisplayName} Discord Bot`;
 
 const joinVcButtonLabel = '🔊 Join VC to record';
 const recordButtonLabel = '🎙️ Record';
@@ -499,7 +499,7 @@ async function generateImageFromRecording(
   const dur_y = nme_y; // Dur y
 
   // "by" refers to the text, which is something like "This was recorded by .."
-  const by_col = '#5b5251'; // By color
+  const by_col = '#6C759B'; // By color
   const by_s = 9 * fnt_s; // By size
   const by_mt = 4 + by_s; // By top margin
   const by_y = avt_y + avt_h + by_mt; // By y
