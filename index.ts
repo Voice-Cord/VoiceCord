@@ -813,26 +813,27 @@ function startVoiceNoteRecording(
     console.log(`User: "${member.id}", Record limit: "${maxRecordTimeSecs}s"`);
     maxRecordTimeSecs = _maxRecordTimeSecs
     userPremium = _userPremium
+
+    if(writeFinished)
+      return
+
+    fileWriter.on('data', () => {
+      // https://social.msdn.microsoft.com/Forums/windows/en-US/5a92be69-3b4e-4d92-b1d2-141ef0a50c91/how-to-calculate-duration-of-wave-file-from-its-size?forum=winforms
+      // time = FileLength / (Sample Rate * Channels * Bits per sample /8)
+      const length = fileWriter.file.bytesWritten / (16000 * 1 * 16/8)
+
+      if(length > maxRecordTimeSecs) {
+        recordStartMessage
+          .edit(
+            `<@${member.id}> limit reached ${maxRecordTimeSecs}s. Upgrade at https://voicecord.app/upgrade`
+          )
+          .catch((e) => console.trace(e));
+        fileWriter.end(() => { writeFinished = true; });
+      }
+    });
   }).catch((e) => console.trace(e));
 
-  fileWriter.on('data', () => {
-    // https://social.msdn.microsoft.com/Forums/windows/en-US/5a92be69-3b4e-4d92-b1d2-141ef0a50c91/how-to-calculate-duration-of-wave-file-from-its-size?forum=winforms
-    // time = FileLength / (Sample Rate * Channels * Bits per sample /8)
-    const length = fileWriter.file.bytesWritten / (16000 * 1 * 16/8)
-
-    if(length > maxRecordTimeSecs) {
-      recordStartMessage
-        .edit(
-          `<@${member.id}> limit reached ${maxRecordTimeSecs}s. Upgrade at https://voicecord.app/upgrade`
-        )
-        .catch((e) => console.trace(e));
-      fileWriter.end(() => { writeFinished = true; });
-    }
-  });
-
-  fileWriter.on('error', () => {
-    /* Do nothing */
-  });
+  fileWriter.on('error', () => { /* Do nothing */ });
 
   audioReceiveStream.pipe(decodingStream).pipe(fileWriter);
 
