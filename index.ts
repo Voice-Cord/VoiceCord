@@ -211,7 +211,7 @@ function leaveGuildIfNotAdmin(guild: Guild): boolean {
         .send(
           `I have no admin rights. Use this link: ${adminInviteLink}, or contact us: \`${email}\``
         )
-        .catch((e) => console.trace(e));
+        .catch((e) => console.log(e));
     }
 
     guild.leave().catch((e) => console.trace(e));
@@ -1176,12 +1176,6 @@ client.on('messageCreate', (message: Message) => {
   } else if (contentLowerCase === helpCommand) {
     message
       .reply(`Record by typing \`${recordCommand}\``)
-      .catch((e) => console.trace(e));
-  } else if (message.content.length > 1000 && Math.random() < 0.5) {
-    message
-      .reply(
-        `Tired of sending long messages? Try VoiceCord by typing \`${recordCommand}\``
-      )
       .catch((e) => console.trace(e));
   }
 });
